@@ -11,10 +11,6 @@ __pycache__/
 .env.*
 !.env.example
 
-# Claude Code - personal development configuration
-.claude/
-CLAUDE.md
-
 # OS files
 .DS_Store
 Thumbs.db
