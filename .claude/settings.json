@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-sensitive-files.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import sys,json,subprocess; data=json.load(sys.stdin); file=data.get('tool_input',{}).get('file_path',''); subprocess.run(['python','-m','black','--quiet',file]) if file.endswith('.py') else None\""
+          }
+        ]
+      }
+    ]
+  }
+}
