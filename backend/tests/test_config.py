@@ -1,10 +1,15 @@
 """Tests for backend/config.py.
 
-Spec contract under test (01-project-foundation.md):
-  - `MONGODB_URI` and any other configuration must come from environment
-    variables (`.env`), never hardcoded.
-  - `PORT`, `CORS_ORIGINS`, and `FLASK_ENV`/debug likewise come from the
-    environment, with sane defaults when unset.
+Spec contract under test:
+  - 01-project-foundation.md:
+    - `MONGODB_URI` and any other configuration must come from environment
+      variables (`.env`), never hardcoded.
+    - `PORT`, `CORS_ORIGINS`, and `FLASK_ENV`/debug likewise come from the
+      environment, with sane defaults when unset.
+  - 02-database-setup.md:
+    - `get_db()` selects the database via `Config.MONGODB_DB_NAME`, which
+      itself is read from the `MONGODB_DB_NAME` environment variable and
+      defaults to `"autoattend"` when unset.
 
 Each test reloads the `config` module after adjusting `os.environ` via
 monkeypatch, so Config's class attributes (assigned at import time) are
@@ -39,7 +44,7 @@ def _reload_with_env(monkeypatch, env):
     # itself does survive, since config.py re-imports it from there.
     monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
 
-    for key in ("MONGODB_URI", "FLASK_ENV", "PORT", "CORS_ORIGINS"):
+    for key in ("MONGODB_URI", "MONGODB_DB_NAME", "FLASK_ENV", "PORT", "CORS_ORIGINS"):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -58,6 +63,18 @@ class TestMongoDbUriFromEnvironment:
         Config = _reload_with_env(monkeypatch, {})
 
         assert Config.MONGODB_URI == ""
+
+
+class TestMongoDbNameFromEnvironment:
+    def test_mongodb_db_name_is_read_from_environment_variable(self, monkeypatch):
+        Config = _reload_with_env(monkeypatch, {"MONGODB_DB_NAME": "autoattend_staging"})
+
+        assert Config.MONGODB_DB_NAME == "autoattend_staging"
+
+    def test_mongodb_db_name_defaults_to_autoattend_when_unset(self, monkeypatch):
+        Config = _reload_with_env(monkeypatch, {})
+
+        assert Config.MONGODB_DB_NAME == "autoattend"
 
 
 class TestPortFromEnvironment:
