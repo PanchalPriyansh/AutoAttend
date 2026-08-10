@@ -23,6 +23,14 @@ def _get_client():
     return _client
 
 
+def get_db():
+    if not Config.MONGODB_URI:
+        raise RuntimeError("MONGODB_URI is not configured")
+
+    client = _get_client()
+    return client[Config.MONGODB_DB_NAME]
+
+
 def get_db_status():
     if not Config.MONGODB_URI:
         return {"connected": False, "error": "MongoDB URI not configured"}
