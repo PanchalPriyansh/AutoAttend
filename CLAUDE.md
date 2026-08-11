@@ -162,6 +162,9 @@ pip install -r backend/requirements.txt
 cd backend
 python app.py
 
+# Create the first admin user (no public registration exists)
+flask create-admin
+
 # Run all tests
 pytest
 
@@ -227,7 +230,7 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 
 | Feature | Status |
 |---|---|
-| Authentication | Follow current implementation status |
+| Authentication | Implemented — Flask-JWT-Extended login/refresh/logout/me via HttpOnly cookies, role-based `@role_required`, `flask create-admin` bootstrap. No public registration. |
 | Academic hierarchy | Follow current implementation status |
 | Admin portal | Follow current implementation status |
 | Faculty portal | Follow current implementation status |

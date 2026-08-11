@@ -1,21 +1,20 @@
 """Tests for backend/app.py (Flask application factory).
 
-Spec contract under test (01-project-foundation.md):
+Spec contract under test (01-project-foundation.md, updated for
+03-authentication.md):
   - `create_app()` builds and returns a working Flask app that serves
     `GET /api/health`.
   - CORS origins come from `Config.CORS_ORIGINS` (env-driven), not a
     hardcoded value.
-  - This feature is foundation-only: "No authentication, authorization,
-    or academic-data logic exists anywhere in this feature's code" (DoD).
-    We assert no such routes are registered yet, rather than testing any
-    real auth/academic behavior that doesn't exist.
+  - Authentication (`/api/auth/*`) is now in scope as of 03-authentication.md
+    and is expected to be registered. Academic-hierarchy/attendance
+    endpoints remain out of scope until their own feature specs, so we
+    still assert those are not registered yet.
 """
 
 from flask import Flask
 
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
-    "login",
-    "auth",
     "student",
     "faculty",
     "admin",
@@ -39,7 +38,13 @@ class TestAppFactory:
 
         assert response.status_code == 200
 
-    def test_no_authentication_or_academic_hierarchy_routes_exist_yet(self, app_instance):
+    def test_authentication_routes_are_registered(self, app_instance):
+        registered_paths = {rule.rule for rule in app_instance.url_map.iter_rules()}
+
+        for path in ("/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/me"):
+            assert path in registered_paths
+
+    def test_no_academic_hierarchy_or_attendance_routes_exist_yet(self, app_instance):
         registered_paths = [rule.rule for rule in app_instance.url_map.iter_rules()]
 
         assert "/api/health" in registered_paths
@@ -49,8 +54,8 @@ class TestAppFactory:
             for fragment in OUT_OF_SCOPE_ROUTE_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
-                    "the project-foundation feature must not implement "
-                    "authentication or academic-data endpoints yet."
+                    "academic-hierarchy and attendance endpoints are not "
+                    "implemented until their own feature specs."
                 )
 
 
