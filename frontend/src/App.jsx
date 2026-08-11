@@ -4,15 +4,37 @@ import AdminPortal from './routes/AdminPortal'
 import FacultyDashboard from './routes/FacultyDashboard'
 import StudentDashboard from './routes/StudentDashboard'
 import NotFound from './routes/NotFound'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/admin" element={<AdminPortal />} />
-      <Route path="/faculty" element={<FacultyDashboard />} />
-      <Route path="/student" element={<StudentDashboard />} />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute role="admin">
+            <AdminPortal />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/faculty"
+        element={
+          <ProtectedRoute role="faculty">
+            <FacultyDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student"
+        element={
+          <ProtectedRoute role="student">
+            <StudentDashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
