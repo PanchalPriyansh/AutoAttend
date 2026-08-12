@@ -231,7 +231,7 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 | Feature | Status |
 |---|---|
 | Authentication | Implemented — Flask-JWT-Extended login/refresh/logout/me via HttpOnly cookies, role-based `@role_required`, `flask create-admin` bootstrap. No public registration. |
-| Academic hierarchy | Follow current implementation status |
+| Academic hierarchy | Implemented — CRUD REST APIs for all five levels (`/api/institutes`, `/api/departments`, `/api/semesters`, `/api/courses`, `/api/classes`); writes are admin-only, reads are admin + faculty. Parents are verified on create and deletes are blocked (never cascaded) while children exist. Admin UI at `/admin/academics`. Deferred: faculty assignment to classes (`faculty_id` stays `null`), student enrollment, and admin user management. |
 | Admin portal | Follow current implementation status |
 | Faculty portal | Follow current implementation status |
 | Student dashboard | Follow current implementation status |

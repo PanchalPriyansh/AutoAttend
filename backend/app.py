@@ -9,6 +9,7 @@ from auth.service import DuplicateEmailError, create_user
 from config import Config
 from database.db import get_db
 from database.init_db import init_database
+from routes.academic import academic_bp
 from routes.auth import auth_bp
 from routes.health import health_bp
 
@@ -45,6 +46,7 @@ def create_app():
 
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(academic_bp)
 
     @app.cli.command("init-db")
     def init_db_command():

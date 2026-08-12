@@ -2,6 +2,10 @@
   --text: #6b6375;
   --text-h: #08060d;
   --bg: #fff;
+  --surface: #f6f5f8;
+  --border: #ded9e4;
+  --accent: #4c3fb5;
+  --danger: #b3261e;
 
   font: 18px/145% system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;
@@ -18,6 +22,10 @@
     --text: #9ca3af;
     --text-h: #f3f4f6;
     --bg: #16171d;
+    --surface: #1e2028;
+    --border: #333642;
+    --accent: #a5b4fc;
+    --danger: #f2b8b5;
   }
 }
 
@@ -35,4 +43,166 @@ body {
 h1 {
   color: var(--text-h);
   font-weight: 500;
+}
+
+/* --- Academic hierarchy admin screen ------------------------------- */
+
+.hierarchy-level {
+  border-top: 1px solid var(--border);
+  padding: 16px 0;
+}
+
+.hierarchy-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hierarchy-header h2 {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hierarchy-hint {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.hierarchy-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.hierarchy-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px;
+  margin: 12px 0;
+  background: var(--surface);
+  border-radius: 8px;
+}
+
+.hierarchy-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+}
+
+.hierarchy-form label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hierarchy-form input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.hierarchy-items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hierarchy-items li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.hierarchy-items li.is-selected {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.hierarchy-select {
+  flex: 1 1 auto;
+  text-align: left;
+  color: var(--text-h);
+  background: none;
+  border: none;
+  padding: 4px 0;
+}
+
+.hierarchy-items li.is-selected .hierarchy-select {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.hierarchy-level button,
+.dialog button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hierarchy-level button:disabled,
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hierarchy-level button.danger,
+.dialog button.danger {
+  color: var(--danger);
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  max-width: 420px;
+  width: 100%;
+  padding: 24px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.dialog h2 {
+  margin-top: 0;
+  color: var(--text-h);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }
