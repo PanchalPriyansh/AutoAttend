@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Login from './routes/Login'
 import AdminPortal from './routes/AdminPortal'
+import AcademicHierarchy from './routes/admin/AcademicHierarchy'
 import FacultyDashboard from './routes/FacultyDashboard'
 import StudentDashboard from './routes/StudentDashboard'
 import NotFound from './routes/NotFound'
@@ -16,6 +17,14 @@ function App() {
         element={
           <ProtectedRoute role="admin">
             <AdminPortal />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/academics"
+        element={
+          <ProtectedRoute role="admin">
+            <AcademicHierarchy />
           </ProtectedRoute>
         }
       />

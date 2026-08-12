@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 function AdminPortal() {
@@ -7,6 +8,9 @@ function AdminPortal() {
     <div>
       <h1>Admin Portal</h1>
       <p>Welcome, {user?.name}</p>
+      <nav>
+        <Link to="/admin/academics">Manage academic hierarchy</Link>
+      </nav>
       <button onClick={logout}>Logout</button>
     </div>
   )
