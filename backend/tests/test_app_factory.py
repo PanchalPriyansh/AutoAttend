@@ -6,24 +6,40 @@ Spec contract under test (01-project-foundation.md, updated for
     `GET /api/health`.
   - CORS origins come from `Config.CORS_ORIGINS` (env-driven), not a
     hardcoded value.
-  - Authentication (`/api/auth/*`) is in scope as of 03-authentication.md
-    and the academic hierarchy (`/api/institutes`, `/api/departments`,
+  - Authentication (`/api/auth/*`) is in scope as of 03-authentication.md,
+    the academic hierarchy (`/api/institutes`, `/api/departments`,
     `/api/semesters`, `/api/courses`, `/api/classes`) as of
-    04-academic-hierarchy-management.md -- both are expected to be
-    registered. Attendance, face recognition, ML, and the role portal
-    endpoints remain out of scope until their own feature specs, so we
-    still assert those are not registered yet.
+    04-academic-hierarchy-management.md, and user management
+    (`/api/users`, plus the class-scoped `/api/classes/<id>/faculty` and
+    `/api/classes/<id>/students`) as of 05-admin-user-management.md --
+    all three are expected to be registered. Attendance, face
+    recognition, ML, and the role portal endpoints remain out of scope
+    until their own feature specs, so we still assert those are not
+    registered yet.
+
+    The out-of-scope check is split in two because the role words are no
+    longer safely matched as substrings: `/api/classes/<id>/faculty` and
+    `/api/classes/<id>/students` are class-scoped resources owned by
+    05-admin-user-management.md, not role portals. A role portal is a
+    top-level namespace, so it is checked as a path prefix -- which still
+    catches a premature `/api/faculty/classes` or `/api/student/me`.
+    "enrollment" is gone from the list entirely: student enrollment is
+    implemented as of 05, so it is no longer out of scope. (It would not
+    have matched `/api/classes/<id>/students` regardless; it is removed
+    because it is no longer true, not to make an assertion pass.)
 """
 
 from flask import Flask
 
+OUT_OF_SCOPE_ROUTE_PREFIXES = [
+    "/api/student",
+    "/api/faculty",
+    "/api/admin",
+]
+
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
-    "student",
-    "faculty",
-    "admin",
     "attendance",
     "recognition",
-    "enrollment",
     "prediction",
     "notification",
 ]
@@ -55,7 +71,49 @@ class TestAppFactory:
             assert path in registered_paths
             assert f"{path}/<item_id>" in registered_paths
 
-    def test_no_attendance_or_portal_routes_exist_yet(self, app_instance):
+    def test_user_management_routes_are_registered(self, app_instance):
+        registered_paths = {rule.rule for rule in app_instance.url_map.iter_rules()}
+
+        for path in (
+            "/api/users",
+            "/api/users/<user_id>",
+            "/api/users/<user_id>/status",
+            "/api/users/<user_id>/password",
+            "/api/classes/<class_id>/faculty",
+            "/api/classes/<class_id>/students",
+            "/api/classes/<class_id>/students/<student_id>",
+        ):
+            assert path in registered_paths
+
+    def test_no_user_delete_route_is_registered(self, app_instance):
+        """Accounts are deactivated, never removed -- a hard delete would
+        orphan the user's enrollments, and later their attendance records
+        and face encodings.
+        """
+        methods = set()
+        for rule in app_instance.url_map.iter_rules():
+            if rule.rule == "/api/users/<user_id>":
+                methods |= rule.methods
+
+        assert "GET" in methods
+        assert "PUT" in methods
+        assert "DELETE" not in methods
+
+    def test_no_role_portal_routes_exist_yet(self, app_instance):
+        registered_paths = [rule.rule for rule in app_instance.url_map.iter_rules()]
+
+        assert "/api/health" in registered_paths
+
+        for path in registered_paths:
+            lowered = path.lower()
+            for prefix in OUT_OF_SCOPE_ROUTE_PREFIXES:
+                assert not lowered.startswith(prefix), (
+                    f"Route '{path}' looks like a role portal namespace; the "
+                    "admin, faculty, and student portal endpoints are not "
+                    "implemented until their own feature specs."
+                )
+
+    def test_no_attendance_or_ml_routes_exist_yet(self, app_instance):
         registered_paths = [rule.rule for rule in app_instance.url_map.iter_rules()]
 
         assert "/api/health" in registered_paths
@@ -65,9 +123,8 @@ class TestAppFactory:
             for fragment in OUT_OF_SCOPE_ROUTE_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
-                    "attendance, face recognition, ML, enrollment, and the "
-                    "role portal endpoints are not implemented until their "
-                    "own feature specs."
+                    "attendance, face recognition, ML, and notifications are "
+                    "not implemented until their own feature specs."
                 )
 
 

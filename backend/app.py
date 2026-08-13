@@ -6,12 +6,15 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
 from auth.service import DuplicateEmailError, create_user
+from common.errors import ValidationError
 from config import Config
 from database.db import get_db
 from database.init_db import init_database
 from routes.academic import academic_bp
 from routes.auth import auth_bp
 from routes.health import health_bp
+from routes.users import users_bp
+from users.validators import validate_password_length
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,7 @@ def create_app():
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(academic_bp)
+    app.register_blueprint(users_bp)
 
     @app.cli.command("init-db")
     def init_db_command():
@@ -65,6 +69,14 @@ def create_app():
         name = click.prompt("Name")
         email = click.prompt("Email")
         password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+
+        # The same rule POST /api/users enforces, so the bootstrap admin
+        # cannot be created with a password the API would have rejected.
+        try:
+            validate_password_length(password)
+        except ValidationError as exc:
+            click.echo(str(exc), err=True)
+            raise SystemExit(1)
 
         try:
             user = create_user(get_db(), name=name, email=email, password=password, role="admin")

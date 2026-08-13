@@ -103,7 +103,8 @@ h1 {
   letter-spacing: 0.05em;
 }
 
-.hierarchy-form input {
+.hierarchy-form input,
+.hierarchy-form select {
   font: inherit;
   font-size: 0.9rem;
   padding: 6px 8px;
@@ -173,6 +174,41 @@ h1 {
 .hierarchy-level button.danger,
 .dialog button.danger {
   color: var(--danger);
+}
+
+/* --- User management admin screen --- */
+
+.hierarchy-subheading {
+  margin: 16px 0 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+/* A person's row needs two lines (name, then email/role), unlike a
+   hierarchy row which is a single label. */
+.user-identity {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-name {
+  color: var(--text-h);
+}
+
+/* Deactivated accounts stay visible and are marked, rather than being
+   filtered out of the list -- an admin needs to see them to reactivate. */
+.hierarchy-items li.is-inactive {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.hierarchy-items li.is-inactive .user-name {
+  color: var(--text);
+  text-decoration: line-through;
 }
 
 .dialog-backdrop {

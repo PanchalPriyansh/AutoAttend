@@ -10,6 +10,8 @@ function AdminPortal() {
       <p>Welcome, {user?.name}</p>
       <nav>
         <Link to="/admin/academics">Manage academic hierarchy</Link>
+        {' · '}
+        <Link to="/admin/users">Manage users</Link>
       </nav>
       <button onClick={logout}>Logout</button>
     </div>
