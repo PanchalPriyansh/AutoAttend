@@ -1,10 +1,16 @@
 """Tests for backend/database/schema.py (collection names, validators, indexes).
 
 Spec contract under test (.claude/specs/02-database-setup.md, "Database
-changes" + "Definition of done"):
-  - Exactly seven collections are declared: users, institutes, departments,
-    semesters, courses, classes, class_enrollments -- no attendance,
-    face-recognition, or ML-related collections.
+changes" + "Definition of done", extended by
+.claude/specs/06-face-enrollment.md):
+  - Exactly eight collections are declared: users, institutes, departments,
+    semesters, courses, classes, class_enrollments, and face_encodings --
+    no attendance or ML-related collections.
+  - `face_encodings` joined the list with 06-face-enrollment.md, which owns
+    it. Until then its name fragments were tripwires here; they were removed
+    because that feature now exists, not to make an assertion pass. The
+    attendance/ML/notification fragments stay, because those specs have not
+    landed.
   - Each collection has a `$jsonSchema`-shaped validator with the required
     fields listed in the spec, and `users.role` is constrained to the
     `admin` | `faculty` | `student` enum.
@@ -27,14 +33,15 @@ ALL_COLLECTION_NAMES = {
     schema.COURSES,
     schema.CLASSES,
     schema.CLASS_ENROLLMENTS,
+    schema.FACE_ENCODINGS,
 }
 
 # Substrings that would indicate a collection belongs to a later,
-# out-of-scope feature (attendance, face recognition, ML, notifications).
+# out-of-scope feature (attendance, ML, notifications). "face"/"encoding"
+# were removed when 06-face-enrollment.md landed; everything below still
+# belongs to a spec that has not been implemented.
 OUT_OF_SCOPE_NAME_FRAGMENTS = [
     "attendance",
-    "face",
-    "encoding",
     "ml",
     "predict",
     "risk",
@@ -57,6 +64,14 @@ EXPECTED_REQUIRED_FIELDS = {
     schema.COURSES: {"semester_id", "name", "code", "created_at"},
     schema.CLASSES: {"course_id", "name", "created_at"},
     schema.CLASS_ENROLLMENTS: {"class_id", "student_id", "enrolled_at"},
+    schema.FACE_ENCODINGS: {
+        "student_id",
+        "encoding",
+        "model",
+        "source",
+        "created_at",
+        "created_by",
+    },
 }
 
 # (keys, unique) signatures per collection, per spec's "Database changes"
@@ -87,6 +102,9 @@ EXPECTED_INDEX_SIGNATURES = {
         ((("class_id", 1), ("student_id", 1)), True),
         ((("student_id", 1),), False),
     },
+    schema.FACE_ENCODINGS: {
+        ((("student_id", 1),), False),
+    },
 }
 
 
@@ -97,7 +115,7 @@ def _spec_for(collection_name):
 
 
 class TestCollectionNameConstants:
-    def test_all_seven_collection_name_constants_are_defined(self):
+    def test_all_eight_collection_name_constants_are_defined(self):
         assert schema.USERS == "users"
         assert schema.INSTITUTES == "institutes"
         assert schema.DEPARTMENTS == "departments"
@@ -105,14 +123,18 @@ class TestCollectionNameConstants:
         assert schema.COURSES == "courses"
         assert schema.CLASSES == "classes"
         assert schema.CLASS_ENROLLMENTS == "class_enrollments"
+        assert schema.FACE_ENCODINGS == "face_encodings"
 
 
 class TestCollectionsRegistry:
-    def test_collections_declares_exactly_the_seven_expected_names(self):
+    def test_collections_declares_exactly_the_eight_expected_names(self):
         declared_names = {spec["name"] for spec in schema.COLLECTIONS}
 
         assert declared_names == ALL_COLLECTION_NAMES
-        assert len(schema.COLLECTIONS) == 7
+        # Hardcoded rather than derived from COLLECTIONS: the point is to
+        # notice an unplanned collection being added, which a derived count
+        # would silently accept.
+        assert len(schema.COLLECTIONS) == 8
 
     def test_no_out_of_scope_collection_names_are_declared(self):
         for spec in schema.COLLECTIONS:
@@ -174,6 +196,8 @@ class TestObjectIdReferenceFields:
             (schema.CLASSES, "course_id"),
             (schema.CLASS_ENROLLMENTS, "class_id"),
             (schema.CLASS_ENROLLMENTS, "student_id"),
+            (schema.FACE_ENCODINGS, "student_id"),
+            (schema.FACE_ENCODINGS, "created_by"),
         ],
     )
     def test_parent_reference_field_is_typed_as_object_id(self, collection_name, ref_field):
@@ -181,6 +205,41 @@ class TestObjectIdReferenceFields:
         properties = spec["validator"]["$jsonSchema"]["properties"]
 
         assert properties[ref_field]["bsonType"] == "objectId"
+
+
+class TestFaceEncodingsValidatorSpecificContract:
+    """Per .claude/specs/06-face-enrollment.md: only the derived encoding is
+    stored, and it is pinned to the descriptor length the encoder produces.
+    """
+
+    def test_encoding_is_an_array_pinned_to_the_descriptor_length(self):
+        encoding_property = schema.FACE_ENCODINGS_VALIDATOR["$jsonSchema"]["properties"][
+            "encoding"
+        ]
+
+        assert encoding_property["bsonType"] == "array"
+        assert encoding_property["minItems"] == 128
+        assert encoding_property["maxItems"] == 128
+        assert encoding_property["items"]["bsonType"] == "double"
+
+    def test_source_is_constrained_to_the_two_capture_paths(self):
+        source_property = schema.FACE_ENCODINGS_VALIDATOR["$jsonSchema"]["properties"][
+            "source"
+        ]
+
+        assert source_property["enum"] == ["upload", "camera"]
+
+    def test_no_field_exists_for_storing_the_source_image(self):
+        """The photograph is processed in memory and discarded; the schema
+        must not offer anywhere to put it, in any form.
+        """
+        properties = schema.FACE_ENCODINGS_VALIDATOR["$jsonSchema"]["properties"]
+
+        for forbidden in ("image", "image_data", "photo", "thumbnail", "file_path", "url"):
+            assert forbidden not in properties, (
+                f"'{forbidden}' would persist biometric source material; only "
+                "the derived encoding may be stored."
+            )
 
 
 class TestIndexDefinitionsPerCollection:

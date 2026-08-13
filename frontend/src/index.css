@@ -242,3 +242,13 @@ h1 {
   gap: 12px;
   justify-content: flex-end;
 }
+
+/* Constrains the live camera preview only. Without a width the <video>
+   renders at the camera's native resolution and pushes the capture button
+   off screen. */
+.face-capture-live video {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  margin: 12px 0;
+}

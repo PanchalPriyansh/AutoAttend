@@ -11,11 +11,12 @@ Spec contract under test (01-project-foundation.md, updated for
     `/api/semesters`, `/api/courses`, `/api/classes`) as of
     04-academic-hierarchy-management.md, and user management
     (`/api/users`, plus the class-scoped `/api/classes/<id>/faculty` and
-    `/api/classes/<id>/students`) as of 05-admin-user-management.md --
-    all three are expected to be registered. Attendance, face
-    recognition, ML, and the role portal endpoints remain out of scope
-    until their own feature specs, so we still assert those are not
-    registered yet.
+    `/api/classes/<id>/students`) as of 05-admin-user-management.md, and
+    face enrolment (`/api/students/<id>/face-encodings`,
+    `/api/classes/<id>/face-enrollment`) as of 06-face-enrollment.md --
+    all four are expected to be registered. Attendance matching, ML, and
+    the role portal endpoints remain out of scope until their own feature
+    specs, so we still assert those are not registered yet.
 
     The out-of-scope check is split in two because the role words are no
     longer safely matched as substrings: `/api/classes/<id>/faculty` and
@@ -36,6 +37,21 @@ OUT_OF_SCOPE_ROUTE_PREFIXES = [
     "/api/faculty",
     "/api/admin",
 ]
+
+
+def _is_role_portal_namespace(path, prefix):
+    """A role portal is a whole top-level path segment (`/api/student`,
+    `/api/student/me`), not any path that merely starts with those
+    characters.
+
+    Matched on the segment boundary since 06-face-enrollment.md added
+    `/api/students/<id>/face-encodings` -- a plural *resource* collection in
+    the style of the existing `/api/classes/<id>/students`, not a role
+    portal. A bare `startswith` would read the two as the same thing and
+    still reject the resource route. `/api/faculty/classes` and
+    `/api/student/me` remain caught.
+    """
+    return path == prefix or path.startswith(f"{prefix}/")
 
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
     "attendance",
@@ -85,6 +101,16 @@ class TestAppFactory:
         ):
             assert path in registered_paths
 
+    def test_face_enrollment_routes_are_registered(self, app_instance):
+        registered_paths = {rule.rule for rule in app_instance.url_map.iter_rules()}
+
+        for path in (
+            "/api/students/<student_id>/face-encodings",
+            "/api/students/<student_id>/face-encodings/<encoding_id>",
+            "/api/classes/<class_id>/face-enrollment",
+        ):
+            assert path in registered_paths
+
     def test_no_user_delete_route_is_registered(self, app_instance):
         """Accounts are deactivated, never removed -- a hard delete would
         orphan the user's enrollments, and later their attendance records
@@ -107,7 +133,7 @@ class TestAppFactory:
         for path in registered_paths:
             lowered = path.lower()
             for prefix in OUT_OF_SCOPE_ROUTE_PREFIXES:
-                assert not lowered.startswith(prefix), (
+                assert not _is_role_portal_namespace(lowered, prefix), (
                     f"Route '{path}' looks like a role portal namespace; the "
                     "admin, faculty, and student portal endpoints are not "
                     "implemented until their own feature specs."
@@ -123,8 +149,10 @@ class TestAppFactory:
             for fragment in OUT_OF_SCOPE_ROUTE_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
-                    "attendance, face recognition, ML, and notifications are "
-                    "not implemented until their own feature specs."
+                    "attendance matching, ML, and notifications are not "
+                    "implemented until their own feature specs. (Face "
+                    "*enrolment* is in scope as of 06-face-enrollment.md; "
+                    "recognising faces in a classroom photo is not.)"
                 )
 
 

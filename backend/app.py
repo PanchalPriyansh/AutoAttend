@@ -4,14 +4,17 @@ import click
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from auth.service import DuplicateEmailError, create_user
 from common.errors import ValidationError
 from config import Config
 from database.db import get_db
 from database.init_db import init_database
+from recognition.validators import MAX_REQUEST_BYTES
 from routes.academic import academic_bp
 from routes.auth import auth_bp
+from routes.faces import faces_bp
 from routes.health import health_bp
 from routes.users import users_bp
 from users.validators import validate_password_length
@@ -33,6 +36,12 @@ def create_app():
     # wildcard origin, so CORS_ORIGINS must stay a specific origin string.
     CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 
+    # Werkzeug refuses a larger request body before it is buffered into
+    # memory, so an outsized upload costs nothing to reject. The image
+    # itself is held to the tighter MAX_IMAGE_BYTES in
+    # recognition/validators.py, which is what produces the 400.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+
     jwt = JWTManager(app)
 
     @jwt.unauthorized_loader
@@ -47,10 +56,21 @@ def create_app():
     def _expired_token(jwt_header, jwt_payload):
         return jsonify({"error": "Authentication token has expired"}), 401
 
+    @app.errorhandler(RequestEntityTooLarge)
+    def _request_too_large(exc):
+        """Registered app-wide rather than on the faces blueprint: Werkzeug
+        rejects the body during request parsing, before routing has decided
+        which blueprint the request belongs to, so a blueprint-level handler
+        would never run and the client would get Flask's HTML error page
+        instead of the JSON error contract.
+        """
+        return jsonify({"error": "The uploaded file is too large"}), 413
+
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(academic_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(faces_bp)
 
     @app.cli.command("init-db")
     def init_db_command():

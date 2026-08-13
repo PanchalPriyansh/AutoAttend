@@ -4,8 +4,9 @@
   - "MONGODB_URI and other config values are read from environment
     variables, not hardcoded anywhere in the backend code."
   - "No secrets or credentials are present in any committed file."
-  - "No other new dependencies -- face recognition, ML, and notification
-    libraries are out of scope until their respective features."
+  - "No other new dependencies -- ML and notification libraries are out of
+    scope until their respective features." (Face-recognition libraries
+    were in that list until 06-face-enrollment.md introduced them.)
   - ".env.example (backend and frontend) exists ... and .env remains
     gitignored."
 
@@ -82,20 +83,20 @@ class TestOutOfScopeDependenciesAreNotIntroduced:
         with open(requirements_path, "r", encoding="utf-8") as handle:
             content = handle.read().lower()
 
-        # Per spec: face recognition, ML, and notification libraries belong
-        # to later feature specs, not this foundation feature.
+        # ML and notification libraries still belong to later feature specs.
+        # `face_recognition`/`numpy` were removed from this list when
+        # .claude/specs/06-face-enrollment.md landed and legitimately
+        # introduced them -- `opencv` stays out until 07 needs video frames,
+        # and scikit-learn until the ML spec.
         out_of_scope_packages = [
-            "face_recognition",
-            "face-recognition",
             "opencv",
             "scikit-learn",
             "sklearn",
-            "numpy",
         ]
         for package in out_of_scope_packages:
             assert package not in content, (
-                f"'{package}' should not be a dependency yet in the "
-                "project-foundation feature"
+                f"'{package}' belongs to a later feature spec and should not "
+                "be a dependency yet"
             )
 
     def test_requirements_txt_includes_the_documented_foundation_dependencies(self):
@@ -105,6 +106,33 @@ class TestOutOfScopeDependenciesAreNotIntroduced:
 
         for expected_package in ("flask", "pymongo", "python-dotenv", "flask-cors"):
             assert expected_package in content
+
+
+class TestRecognitionLibraryImportIsolation:
+    """06-face-enrollment.md, "Rules for implementation" + Definition of
+    done: "No face_recognition or numpy import exists outside
+    backend/recognition/encoder.py." Keeping both imports confined there
+    (and lazy, inside functions -- see encoder.py itself) is what lets
+    the rest of the backend, and the 01-05 test suites, run on a machine
+    where the native `dlib` build is unavailable.
+    """
+
+    ENCODER_PATH = os.path.join(BACKEND_DIR, "recognition", "encoder.py")
+    IMPORT_PATTERN = re.compile(r"^\s*(import|from)\s+(face_recognition|numpy)\b")
+
+    def test_face_recognition_and_numpy_are_only_imported_in_encoder_py(self):
+        offenders = []
+        for path in _iter_backend_python_files():
+            if os.path.normpath(path) == os.path.normpath(self.ENCODER_PATH):
+                continue
+            with open(path, "r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if self.IMPORT_PATTERN.match(line):
+                        offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+        assert not offenders, (
+            f"face_recognition/numpy imported outside recognition/encoder.py: {offenders}"
+        )
 
 
 class TestEnvExampleFilesAndGitignore:

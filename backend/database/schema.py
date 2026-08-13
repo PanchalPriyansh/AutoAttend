@@ -1,6 +1,6 @@
 """Collection names, `$jsonSchema` validators, and index definitions for
 AutoAttend's academic hierarchy (Institute -> Department -> Semester ->
-Course -> Class) plus `users` and `class_enrollments`.
+Course -> Class) plus `users`, `class_enrollments`, and `face_encodings`.
 
 Pure data -- no pymongo or Flask imports, no side effects. `init_db.py`
 consumes `COLLECTIONS` to create/update collections and indexes. Later
@@ -22,6 +22,7 @@ SEMESTERS = "semesters"
 COURSES = "courses"
 CLASSES = "classes"
 CLASS_ENROLLMENTS = "class_enrollments"
+FACE_ENCODINGS = "face_encodings"
 
 USERS_VALIDATOR = {
     "$jsonSchema": {
@@ -125,6 +126,49 @@ CLASS_ENROLLMENTS_VALIDATOR = {
     }
 }
 
+FACE_ENCODINGS_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "student_id",
+            "encoding",
+            "model",
+            "source",
+            "created_at",
+            "created_by",
+        ],
+        "properties": {
+            "student_id": {"bsonType": "objectId"},
+            # One document per captured sample, never an array of samples on
+            # the student: a per-student array would grow unbounded and would
+            # make deleting a single sample a rewrite of the whole document.
+            #
+            # 128 is the descriptor length produced by `face_recognition`;
+            # `recognition/encoder.py` mirrors it as ENCODING_LENGTH. Pinning
+            # both ends of the range means a truncated or concatenated vector
+            # is rejected by the database, not just by application code.
+            "encoding": {
+                "bsonType": "array",
+                "minItems": 128,
+                "maxItems": 128,
+                "items": {"bsonType": "double"},
+            },
+            # Which detector produced the vector. Encodings from different
+            # models are not comparable, so storing this is what makes a
+            # future model change a detectable migration rather than a silent
+            # accuracy regression.
+            "model": {"bsonType": "string", "minLength": 1},
+            "source": {"enum": ["upload", "camera"]},
+            "created_at": {"bsonType": "date"},
+            "created_by": {"bsonType": "objectId"},
+        },
+    }
+}
+
+# NOTE: the source image is deliberately absent from the shape above. Only
+# the derived encoding is persisted -- there is no field here for a photo,
+# a thumbnail, or a file path, and none should be added.
+
 COLLECTIONS = [
     {
         "name": USERS,
@@ -195,6 +239,15 @@ COLLECTIONS = [
                 "unique": True,
                 "name": "uniq_class_id_student_id",
             },
+            {"keys": [("student_id", 1)], "unique": False, "name": "idx_student_id"},
+        ],
+    },
+    {
+        "name": FACE_ENCODINGS,
+        "validator": FACE_ENCODINGS_VALIDATOR,
+        "indexes": [
+            # Non-unique: multiple samples per student is the point -- several
+            # angles/lighting conditions produce better matching than one.
             {"keys": [("student_id", 1)], "unique": False, "name": "idx_student_id"},
         ],
     },

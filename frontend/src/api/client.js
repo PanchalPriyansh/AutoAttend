@@ -9,7 +9,11 @@ function rawFetch(path, options, csrfCookieName) {
   const method = (options.method || 'GET').toUpperCase()
   const headers = { ...(options.headers || {}) }
 
-  if (options.body !== undefined) {
+  // FormData is excluded deliberately: the browser has to set
+  // `multipart/form-data; boundary=…` itself, and overriding it with
+  // application/json leaves the server unable to parse the parts. Every
+  // other body in the project is JSON.
+  if (options.body !== undefined && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
 
