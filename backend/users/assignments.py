@@ -26,7 +26,7 @@ def _require_class(db, class_id):
         raise NotFoundError("Class not found")
 
 
-def _require_user_with_role(db, user_id, role, field_name):
+def require_user_with_role(db, user_id, role, field_name, *, require_active=True):
     """Resolve a referenced user, rejecting the wrong role or a disabled
     account before the reference is stored.
 
@@ -34,6 +34,16 @@ def _require_user_with_role(db, user_id, role, field_name):
     exists, so the problem is the input, not a missing resource. The same
     reasoning covers a deactivated account -- it exists but is not in a
     referenceable state.
+
+    `require_active=False` is for operations that read or remove data
+    already attached to a user rather than creating a new reference to
+    them: refusing to delete a deactivated student's face encodings would
+    make their biometric data impossible to erase, which is the opposite
+    of what deactivation should allow.
+
+    Public because face enrolment resolves students the same way; it is
+    shared rather than reimplemented so a wrong-role id cannot mean a 400
+    in one feature and a 404 in another.
     """
     user = db[USERS].find_one({"_id": user_id})
     if user is None:
@@ -41,7 +51,7 @@ def _require_user_with_role(db, user_id, role, field_name):
 
     if user.get("role") != role:
         raise ValidationError(f"{field_name} must reference a {role} user")
-    if not user.get("is_active", False):
+    if require_active and not user.get("is_active", False):
         raise ValidationError(f"{field_name} must reference an active {role} user")
 
     return user
@@ -57,7 +67,7 @@ def assign_faculty(db, class_id, faculty_id):
     _require_class(db, class_id)
 
     if faculty_id is not None:
-        _require_user_with_role(db, faculty_id, "faculty", "faculty_id")
+        require_user_with_role(db, faculty_id, "faculty", "faculty_id")
 
     # No `updated_at` here: the `classes` validator in database/schema.py
     # does not declare one, and undeclared fields do not belong in
@@ -112,7 +122,7 @@ def list_enrollments(db, class_id):
 
 def enroll_student(db, class_id, student_id):
     _require_class(db, class_id)
-    student = _require_user_with_role(db, student_id, "student", "student_id")
+    student = require_user_with_role(db, student_id, "student", "student_id")
 
     enrollment = {
         "class_id": class_id,

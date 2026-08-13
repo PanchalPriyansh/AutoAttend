@@ -158,6 +158,13 @@ source venv/bin/activate
 # Install backend dependencies
 pip install -r backend/requirements.txt
 
+# face_recognition depends on dlib, which compiles from source. On Windows
+# install CMake and the Visual Studio C++ Build Tools first, then re-run the
+# install above. Everything except face enrollment works without it: the
+# recognition library is imported lazily, so the API still starts and the
+# test suite still passes, and only the face-enrollment endpoints report 503
+# until dlib is built.
+
 # Run Flask backend
 cd backend
 python app.py
@@ -233,10 +240,11 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 | Authentication | Implemented — Flask-JWT-Extended login/refresh/logout/me via HttpOnly cookies, role-based `@role_required`, `flask create-admin` bootstrap. No public registration. |
 | Academic hierarchy | Implemented — CRUD REST APIs for all five levels (`/api/institutes`, `/api/departments`, `/api/semesters`, `/api/courses`, `/api/classes`); writes are admin-only, reads are admin + faculty. Parents are verified on create and deletes are blocked (never cascaded) while children exist. Admin UI at `/admin/academics`. Faculty assignment and student enrollment are now handled by Admin user management (below). |
 | Admin user management | Implemented — admin-only `/api/users` CRUD (create/list/get/update, `PUT .../status`, `PUT .../password`), plus `PUT /api/classes/<id>/faculty` and `/api/classes/<id>/students` for enrollment. Accounts are deactivated, never deleted; `role` is immutable after creation; an admin cannot deactivate themselves or the last active admin. Admin UI at `/admin/users`, with the class assignment panel inside `/admin/academics`. Deferred: pagination on the user list, and invalidating an already-issued access token on password reset/deactivation (bounded by the 15-minute access-token lifetime). |
+| Face enrollment | Implemented — admin-only `/api/students/<id>/face-encodings` (list/register/delete one/delete all) plus `GET /api/classes/<id>/face-enrollment` for per-student sample counts across a roster. Stores only the 128-value encoding in the `face_encodings` collection; the source image is processed in memory and never persisted, and the encoding vector never appears in a response. All CV code is confined to `backend/recognition/encoder.py`, which imports `face_recognition`/`numpy` lazily — where `dlib` is not built, the app still starts and these endpoints return `503`. Admin UI at `/admin/face-enrollment` (file upload + webcam capture). Deferred: students/faculty cannot see enrollment status, there is no bulk import, and changing the detector model has no re-encoding migration path (the stored `model` field is what makes one possible later). |
 | Admin portal | Follow current implementation status |
 | Faculty portal | Follow current implementation status |
 | Student dashboard | Follow current implementation status |
-| Face recognition | Follow current implementation status |
+| Face recognition (attendance matching) | Follow current implementation status — recognising many faces in a classroom photo belongs to the attendance-capture spec, not to face enrollment above |
 | Attendance system | Follow current implementation status |
 | ML prediction | Follow current implementation status |
 | Notifications | Follow current implementation status |

@@ -27,13 +27,16 @@ class _InsertOneResult:
 
 def _field_matches(value, condition):
     """A single query-field comparison, either plain equality or one of
-    the small set of operators `05-admin-user-management` needs:
-    `$in` (student-id lookup for a roster) and `$regex`/`$options`
-    (the `q=` name/email search).
+    the small set of operators the test suite needs: `$in` (student-id
+    lookup for a roster), `$ne` (06-face-enrollment.md's cross-student
+    duplicate-face scan, "every *other* student's encodings"), and
+    `$regex`/`$options` (the `q=` name/email search).
     """
     if isinstance(condition, dict):
         if "$in" in condition:
             return value in condition["$in"]
+        if "$ne" in condition:
+            return value != condition["$ne"]
         if "$regex" in condition:
             flags = re.IGNORECASE if condition.get("$options") == "i" else 0
             return bool(re.search(condition["$regex"], value or "", flags))

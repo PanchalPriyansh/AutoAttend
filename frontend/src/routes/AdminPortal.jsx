@@ -12,6 +12,8 @@ function AdminPortal() {
         <Link to="/admin/academics">Manage academic hierarchy</Link>
         {' · '}
         <Link to="/admin/users">Manage users</Link>
+        {' · '}
+        <Link to="/admin/face-enrollment">Face enrollment</Link>
       </nav>
       <button onClick={logout}>Logout</button>
     </div>

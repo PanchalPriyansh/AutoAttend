@@ -3,6 +3,7 @@ import Login from './routes/Login'
 import AdminPortal from './routes/AdminPortal'
 import AcademicHierarchy from './routes/admin/AcademicHierarchy'
 import UserManagement from './routes/admin/UserManagement'
+import FaceEnrollment from './routes/admin/FaceEnrollment'
 import FacultyDashboard from './routes/FacultyDashboard'
 import StudentDashboard from './routes/StudentDashboard'
 import NotFound from './routes/NotFound'
@@ -34,6 +35,14 @@ function App() {
         element={
           <ProtectedRoute role="admin">
             <UserManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/face-enrollment"
+        element={
+          <ProtectedRoute role="admin">
+            <FaceEnrollment />
           </ProtectedRoute>
         }
       />
