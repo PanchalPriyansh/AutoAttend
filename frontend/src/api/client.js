@@ -50,3 +50,20 @@ export async function apiFetch(path, options = {}) {
 
   return response
 }
+
+/**
+ * apiFetch plus JSON unwrapping: returns the parsed body, or throws an Error
+ * carrying the backend's own `error` message on a non-OK response. Components
+ * render that message directly, so a 409 reaches the user as "Cannot delete: 3
+ * departments belong to this institute" rather than a generic failure.
+ */
+export async function requestJson(path, options = {}) {
+  const response = await apiFetch(path, options)
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Request failed')
+  }
+
+  return data
+}

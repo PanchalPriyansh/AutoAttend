@@ -32,6 +32,7 @@ from academic.validators import (
     require_non_empty_string,
 )
 from auth.decorators import role_required
+from common.http import json_body as _json_body
 from database.db import get_db
 
 logger = logging.getLogger(__name__)
@@ -67,17 +68,6 @@ def _handle_database_error(exc):
     """
     logger.exception("Database error in an academic route")
     return jsonify({"error": "Service temporarily unavailable"}), 500
-
-
-def _json_body():
-    """A non-dict JSON payload (e.g. a bare list, string, or number) is
-    valid JSON but not a usable request body -- treating it as empty
-    routes it through the normal "missing field" -> ValidationError -> 400
-    path instead of raising AttributeError from body.get(...) deep inside
-    a validator.
-    """
-    body = request.get_json(silent=True)
-    return body if isinstance(body, dict) else {}
 
 
 def _parent_id_from_query(level):

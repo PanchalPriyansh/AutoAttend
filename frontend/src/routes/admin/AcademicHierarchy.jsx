@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { classes, courses, departments, institutes, semesters } from '../../api/academic'
+import ClassAssignment from '../../components/admin/ClassAssignment'
 import HierarchyLevel from '../../components/admin/HierarchyLevel'
 
 const NAME_AND_CODE = [
@@ -97,7 +98,7 @@ function useHierarchyLevel(resource, parentId) {
     [resource, refresh],
   )
 
-  return { items, loading, error, create, update, remove }
+  return { items, loading, error, create, update, remove, refresh }
 }
 
 function AcademicHierarchy() {
@@ -134,6 +135,10 @@ function AcademicHierarchy() {
     },
     [],
   )
+
+  // Resolved from the loaded list rather than tracked separately, so the
+  // panel always reflects the class list's current faculty_id.
+  const selectedClass = classLevel.items.find((item) => item.id === selection.class)
 
   return (
     <div>
@@ -223,6 +228,16 @@ function AcademicHierarchy() {
         onUpdate={classLevel.update}
         onDelete={removeAndDeselect('class', classLevel.remove)}
       />
+
+      {selectedClass && (
+        <ClassAssignment
+          // Remounts on a class change, so the panel never shows one class's
+          // roster while its header names another.
+          key={selectedClass.id}
+          classItem={selectedClass}
+          onClassChanged={classLevel.refresh}
+        />
+      )}
     </div>
   )
 }

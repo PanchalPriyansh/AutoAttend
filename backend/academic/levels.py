@@ -129,15 +129,17 @@ CLASS = Level(
     plural="classes",
     collection=CLASSES,
     parent=ParentRef(collection=COURSES, field="course_id", label="Course"),
-    # Enrollments are the "Student" tier of the hierarchy. This feature only
-    # reads them to block a delete -- creating them belongs to a later spec.
+    # Enrollments are the "Student" tier of the hierarchy. They are only
+    # read here, to block a delete; they are created by
+    # users/assignments.py.
     child=ChildRef(
         collection=CLASS_ENROLLMENTS, field="class_id",
         singular="enrollment", plural="enrollments",
     ),
     fields=("name",),
-    # Faculty assignment is out of scope for this feature: faculty_id is
-    # written as null on create and never updated here.
+    # faculty_id is returned to clients but never accepted from them on the
+    # generic class endpoints: it is written as null on create, and only
+    # users/assignments.assign_faculty ever changes it.
     read_only_fields=("faculty_id",),
     create_defaults={"faculty_id": None},
 )
