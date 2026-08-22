@@ -53,10 +53,13 @@ def _is_role_portal_namespace(path, prefix):
     """
     return path == prefix or path.startswith(f"{prefix}/")
 
+# "attendance" was removed when .claude/specs/07-attendance-capture.md
+# landed and legitimately introduced those routes, the same way
+# 06-face-enrollment.md earned face enrolment. Everything below still
+# belongs to a spec that has not been implemented.
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
-    "attendance",
-    "recognition",
     "prediction",
+    "risk",
     "notification",
 ]
 
@@ -139,7 +142,7 @@ class TestAppFactory:
                     "implemented until their own feature specs."
                 )
 
-    def test_no_attendance_or_ml_routes_exist_yet(self, app_instance):
+    def test_no_ml_or_notification_routes_exist_yet(self, app_instance):
         registered_paths = [rule.rule for rule in app_instance.url_map.iter_rules()]
 
         assert "/api/health" in registered_paths
@@ -149,10 +152,10 @@ class TestAppFactory:
             for fragment in OUT_OF_SCOPE_ROUTE_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
-                    "attendance matching, ML, and notifications are not "
-                    "implemented until their own feature specs. (Face "
-                    "*enrolment* is in scope as of 06-face-enrollment.md; "
-                    "recognising faces in a classroom photo is not.)"
+                    "ML risk prediction and notifications are not implemented "
+                    "until their own feature specs. (Face *enrolment* is in "
+                    "scope as of 06-face-enrollment.md and classroom "
+                    "recognition as of 07-attendance-capture.md.)"
                 )
 
 

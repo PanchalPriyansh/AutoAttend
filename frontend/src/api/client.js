@@ -60,13 +60,21 @@ export async function apiFetch(path, options = {}) {
  * carrying the backend's own `error` message on a non-OK response. Components
  * render that message directly, so a 409 reaches the user as "Cannot delete: 3
  * departments belong to this institute" rather than a generic failure.
+ *
+ * The thrown Error also carries `.status`, for the few cases where the code
+ * changes what the UI *does* rather than only what it says: attendance treats
+ * a 404 as "not taken yet" instead of a failure, and a 409 as an offer to
+ * replace. Matching on the message text instead would break the moment a
+ * backend message is reworded.
  */
 export async function requestJson(path, options = {}) {
   const response = await apiFetch(path, options)
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    throw new Error(data.error || 'Request failed')
+    const error = new Error(data.error || 'Request failed')
+    error.status = response.status
+    throw error
   }
 
   return data

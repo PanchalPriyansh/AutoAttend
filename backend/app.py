@@ -13,6 +13,7 @@ from database.db import get_db
 from database.init_db import init_database
 from recognition.validators import MAX_REQUEST_BYTES
 from routes.academic import academic_bp
+from routes.attendance import attendance_bp
 from routes.auth import auth_bp
 from routes.faces import faces_bp
 from routes.health import health_bp
@@ -71,6 +72,7 @@ def create_app():
     app.register_blueprint(academic_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(faces_bp)
+    app.register_blueprint(attendance_bp)
 
     @app.cli.command("init-db")
     def init_db_command():

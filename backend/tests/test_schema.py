@@ -2,14 +2,17 @@
 
 Spec contract under test (.claude/specs/02-database-setup.md, "Database
 changes" + "Definition of done", extended by
-.claude/specs/06-face-enrollment.md):
-  - Exactly eight collections are declared: users, institutes, departments,
-    semesters, courses, classes, class_enrollments, and face_encodings --
-    no attendance or ML-related collections.
-  - `face_encodings` joined the list with 06-face-enrollment.md, which owns
-    it. Until then its name fragments were tripwires here; they were removed
-    because that feature now exists, not to make an assertion pass. The
-    attendance/ML/notification fragments stay, because those specs have not
+.claude/specs/06-face-enrollment.md and
+.claude/specs/07-attendance-capture.md):
+  - Exactly ten collections are declared: users, institutes, departments,
+    semesters, courses, classes, class_enrollments, face_encodings,
+    attendance_sessions, and attendance_records -- no ML- or
+    notification-related collections.
+  - `face_encodings` joined the list with 06-face-enrollment.md and the two
+    attendance collections with 07-attendance-capture.md, each of which owns
+    what it added. Until then those name fragments were tripwires here; each
+    was removed because its feature now exists, not to make an assertion
+    pass. The ML/notification fragments stay, because those specs have not
     landed.
   - Each collection has a `$jsonSchema`-shaped validator with the required
     fields listed in the spec, and `users.role` is constrained to the
@@ -34,14 +37,16 @@ ALL_COLLECTION_NAMES = {
     schema.CLASSES,
     schema.CLASS_ENROLLMENTS,
     schema.FACE_ENCODINGS,
+    schema.ATTENDANCE_SESSIONS,
+    schema.ATTENDANCE_RECORDS,
 }
 
 # Substrings that would indicate a collection belongs to a later,
-# out-of-scope feature (attendance, ML, notifications). "face"/"encoding"
-# were removed when 06-face-enrollment.md landed; everything below still
-# belongs to a spec that has not been implemented.
+# out-of-scope feature (ML, notifications). "face"/"encoding" were removed
+# when 06-face-enrollment.md landed and "attendance" when
+# 07-attendance-capture.md did; everything below still belongs to a spec
+# that has not been implemented.
 OUT_OF_SCOPE_NAME_FRAGMENTS = [
-    "attendance",
     "ml",
     "predict",
     "risk",
@@ -71,6 +76,22 @@ EXPECTED_REQUIRED_FIELDS = {
         "source",
         "created_at",
         "created_by",
+    },
+    schema.ATTENDANCE_SESSIONS: {
+        "class_id",
+        "date",
+        "source",
+        "taken_by",
+        "created_at",
+        "updated_at",
+    },
+    schema.ATTENDANCE_RECORDS: {
+        "session_id",
+        "class_id",
+        "student_id",
+        "status",
+        "marked_by",
+        "created_at",
     },
 }
 
@@ -105,6 +126,13 @@ EXPECTED_INDEX_SIGNATURES = {
     schema.FACE_ENCODINGS: {
         ((("student_id", 1),), False),
     },
+    schema.ATTENDANCE_SESSIONS: {
+        ((("class_id", 1), ("date", 1)), True),
+    },
+    schema.ATTENDANCE_RECORDS: {
+        ((("session_id", 1), ("student_id", 1)), True),
+        ((("student_id", 1), ("class_id", 1)), False),
+    },
 }
 
 
@@ -115,7 +143,7 @@ def _spec_for(collection_name):
 
 
 class TestCollectionNameConstants:
-    def test_all_eight_collection_name_constants_are_defined(self):
+    def test_all_ten_collection_name_constants_are_defined(self):
         assert schema.USERS == "users"
         assert schema.INSTITUTES == "institutes"
         assert schema.DEPARTMENTS == "departments"
@@ -124,17 +152,19 @@ class TestCollectionNameConstants:
         assert schema.CLASSES == "classes"
         assert schema.CLASS_ENROLLMENTS == "class_enrollments"
         assert schema.FACE_ENCODINGS == "face_encodings"
+        assert schema.ATTENDANCE_SESSIONS == "attendance_sessions"
+        assert schema.ATTENDANCE_RECORDS == "attendance_records"
 
 
 class TestCollectionsRegistry:
-    def test_collections_declares_exactly_the_eight_expected_names(self):
+    def test_collections_declares_exactly_the_ten_expected_names(self):
         declared_names = {spec["name"] for spec in schema.COLLECTIONS}
 
         assert declared_names == ALL_COLLECTION_NAMES
         # Hardcoded rather than derived from COLLECTIONS: the point is to
         # notice an unplanned collection being added, which a derived count
         # would silently accept.
-        assert len(schema.COLLECTIONS) == 8
+        assert len(schema.COLLECTIONS) == 10
 
     def test_no_out_of_scope_collection_names_are_declared(self):
         for spec in schema.COLLECTIONS:
@@ -142,8 +172,8 @@ class TestCollectionsRegistry:
             for fragment in OUT_OF_SCOPE_NAME_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Collection '{spec['name']}' looks out of scope for the "
-                    "database-setup feature (attendance/face/ML/notification "
-                    "collections belong to their own later specs)."
+                    "features implemented so far (ML/notification collections "
+                    "belong to their own later specs)."
                 )
 
 
