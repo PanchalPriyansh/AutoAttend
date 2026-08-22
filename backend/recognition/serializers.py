@@ -9,7 +9,7 @@ value the project stores and no client, admin included, has a reason to
 receive it.
 """
 
-from common.serializers import to_json_value
+from common.serializers import student_summary, to_json_value
 
 
 def serialize_encoding(document):
@@ -27,18 +27,6 @@ def serialize_encodings(documents):
     return [serialize_encoding(document) for document in documents]
 
 
-def _serialize_student(student):
-    """The same narrow view a class roster uses -- enough to identify the
-    student on screen, and nothing more.
-    """
-    return {
-        "id": str(student["_id"]),
-        "name": student.get("name"),
-        "email": student.get("email"),
-        "is_active": student.get("is_active"),
-    }
-
-
 def serialize_enrollment_status(entry):
     """`entry` is one (student, sample_count, last_enrolled_at) triple from
     recognition.service.class_enrollment_status.
@@ -46,7 +34,7 @@ def serialize_enrollment_status(entry):
     student, sample_count, last_enrolled_at = entry
 
     return {
-        "student": _serialize_student(student),
+        "student": student_summary(student),
         "sample_count": sample_count,
         "last_enrolled_at": to_json_value(last_enrolled_at),
     }

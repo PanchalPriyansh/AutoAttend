@@ -38,11 +38,21 @@ ENCODING_LENGTH = 128
 DETECTOR_MODEL = "hog"
 
 # Maximum Euclidean distance between two encodings for them to be treated
-# as the same person. 0.6 is the value `face_recognition` documents as a
-# reasonable default; it is a heuristic that trades false positives
+# as the same person. `face_recognition` documents 0.6 as a reasonable
+# generic default, but it is a heuristic that trades false positives
 # against false negatives, not a threshold below which identity is
-# certain. Tune it against real data before trusting it.
-MATCH_TOLERANCE = 0.6
+# certain -- and it proved too loose for this project's own enrollment
+# photos: an exhaustive same-vs-different-person comparison across 7 real
+# students and 11 photos (2026-08-22) measured same-person distances up to
+# 0.4054 and different-person distances down to 0.4413, with 0.6
+# misclassifying over half of the different-person pairs as the same
+# person. 0.42 sits in the (narrow -- 0.036 wide) gap between those two
+# figures for that sample. That margin is thin: as more students are
+# enrolled, expect to re-tune this again rather than treat it as final,
+# and expect some same-person pairs from noisier real classroom captures
+# to eventually land above it too (a false reject faculty corrects by
+# hand, which is the safer failure direction than a false accept).
+MATCH_TOLERANCE = 0.42
 
 
 def _face_recognition():

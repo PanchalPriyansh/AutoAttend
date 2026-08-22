@@ -13,6 +13,14 @@ Flask-JWT-Extended>=4.6,<5.0
 face_recognition>=1.3,<2.0
 numpy>=1.26
 
+# Attendance capture from a video: OpenCV decodes the clip and
+# recognition/frames.py samples a handful of stills from it. Detection and
+# encoding stay with face_recognition -- this is used for nothing else.
+# Imported lazily in recognition/frames.py, so a server without it still
+# starts and still takes attendance from a photo; only video reports 503.
+# Ships as a prebuilt wheel on Windows, unlike dlib -- no toolchain needed.
+opencv-python>=4.8,<5.0
+
 # face_recognition_models (a face_recognition dependency, unmaintained since
 # ~2018) does an old-style `from pkg_resources import resource_filename`.
 # setuptools>=81 dropped pkg_resources, so an unpinned install resolves the

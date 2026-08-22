@@ -1,4 +1,5 @@
-"""Input validation rules specific to face enrolment.
+"""Input validation rules for uploaded media -- enrolment photos and the
+classroom photo/video an attendance capture arrives as.
 
 Pure functions -- no Flask objects, no database access, no CV library.
 The route reads the file part off the request and hands the raw bytes
@@ -24,38 +25,70 @@ DEFAULT_SOURCE = "upload"
 # decoding is attempted.
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+# A classroom video is a few seconds of a static shot, not a recording of
+# the lecture. Larger than the photo ceiling because even a short clip
+# dwarfs a still, but bounded for the same reason: it is decoded in the
+# request, and recognition/frames.py only samples a handful of frames from
+# it however long it runs.
+MAX_VIDEO_BYTES = 25 * 1024 * 1024
+
 # What app.py applies as MAX_CONTENT_LENGTH, so Werkzeug refuses an
 # outsized body (413) instead of buffering it into memory.
 #
-# Deliberately above MAX_IMAGE_BYTES rather than equal to it: a multipart
-# body carries boundary framing, headers, and the `source` field on top of
-# the file itself, so a legal 5 MB image arrives as slightly more than 5 MB
-# on the wire. Setting them equal would reject the largest permitted image
-# as a 413 and make the 400 below unreachable.
-MAX_REQUEST_BYTES = MAX_IMAGE_BYTES + 1024 * 1024
+# Sized from the largest media type any route accepts, and deliberately
+# above it rather than equal to it: a multipart body carries boundary
+# framing, headers, and fields like `source`/`class_id` on top of the file
+# itself, so a legal 25 MB video arrives as slightly more than 25 MB on the
+# wire. Setting them equal would reject the largest permitted file as a 413
+# and make the 400 below unreachable.
+MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024
 
 ALLOWED_CONTENT_TYPES = ("image/jpeg", "image/png", "image/webp")
 
+# What a browser produces from a file picker or a MediaRecorder capture.
+# Deliberately short: every entry is a container OpenCV can actually open,
+# so an accepted upload does not fail later in the decoder.
+ALLOWED_VIDEO_CONTENT_TYPES = ("video/mp4", "video/webm", "video/quicktime")
 
-def require_image(data, content_type):
-    """Validate the raw upload before anything tries to decode it."""
+
+def _require_media(data, content_type, field_name, allowed_types, max_bytes):
+    """The shared shape of every media check: present, of an allowed type,
+    and within its ceiling -- in that order, so the cheapest rejection
+    happens first and nothing hostile reaches a decoder.
+
+    Shared by require_image and require_video rather than duplicated: the
+    two differ only in their allow-list and ceiling, and a second copy is
+    how one of them ends up missing a fix the other got.
+    """
     if not data:
-        raise ValidationError("image file is required")
+        raise ValidationError(f"{field_name} file is required")
 
-    # Compared case-insensitively and without any "; charset=" suffix,
-    # which browsers are entitled to append.
+    # Compared case-insensitively and without any "; charset=" or
+    # "; codecs=" suffix, which browsers are entitled to append.
     normalized = (content_type or "").split(";")[0].strip().lower()
-    if normalized not in ALLOWED_CONTENT_TYPES:
-        raise ValidationError(
-            f"image must be one of: {', '.join(ALLOWED_CONTENT_TYPES)}"
-        )
+    if normalized not in allowed_types:
+        raise ValidationError(f"{field_name} must be one of: {', '.join(allowed_types)}")
 
-    if len(data) > MAX_IMAGE_BYTES:
+    if len(data) > max_bytes:
         raise ValidationError(
-            f"image must be smaller than {MAX_IMAGE_BYTES // (1024 * 1024)} MB"
+            f"{field_name} must be smaller than {max_bytes // (1024 * 1024)} MB"
         )
 
     return data
+
+
+def require_image(data, content_type):
+    """Validate a raw image upload before anything tries to decode it."""
+    return _require_media(
+        data, content_type, "image", ALLOWED_CONTENT_TYPES, MAX_IMAGE_BYTES
+    )
+
+
+def require_video(data, content_type):
+    """Validate a raw video upload before anything tries to decode it."""
+    return _require_media(
+        data, content_type, "video", ALLOWED_VIDEO_CONTENT_TYPES, MAX_VIDEO_BYTES
+    )
 
 
 def require_source(value):

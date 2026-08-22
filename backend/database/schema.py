@@ -23,6 +23,8 @@ COURSES = "courses"
 CLASSES = "classes"
 CLASS_ENROLLMENTS = "class_enrollments"
 FACE_ENCODINGS = "face_encodings"
+ATTENDANCE_SESSIONS = "attendance_sessions"
+ATTENDANCE_RECORDS = "attendance_records"
 
 USERS_VALIDATOR = {
     "$jsonSchema": {
@@ -169,6 +171,67 @@ FACE_ENCODINGS_VALIDATOR = {
 # the derived encoding is persisted -- there is no field here for a photo,
 # a thumbnail, or a file path, and none should be added.
 
+ATTENDANCE_SESSIONS_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["class_id", "date", "source", "taken_by", "created_at", "updated_at"],
+        "properties": {
+            "class_id": {"bsonType": "objectId"},
+            # Normalised to UTC midnight by attendance/validators.py, so one
+            # calendar day is exactly one value. Without that normalisation
+            # two captures of the same lecture would carry different times
+            # and uniq_class_id_date below would let both through.
+            "date": {"bsonType": "date"},
+            # How the session was produced. "manual" covers a roster marked
+            # without a capture; it is provenance for review, never a claim
+            # about how accurate the result is.
+            "source": {"enum": ["photo", "video", "manual"]},
+            "taken_by": {"bsonType": "objectId"},
+            "created_at": {"bsonType": "date"},
+            "updated_at": {"bsonType": "date"},
+        },
+    }
+}
+
+ATTENDANCE_RECORDS_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "session_id",
+            "class_id",
+            "student_id",
+            "status",
+            "marked_by",
+            "created_at",
+        ],
+        "properties": {
+            "session_id": {"bsonType": "objectId"},
+            # Denormalised from the parent session so a later feature can ask
+            # "this student's attendance in this class" without joining
+            # sessions first. It must always equal the session's class_id;
+            # attendance/service.py copies it from there rather than from
+            # anything the client sent.
+            "class_id": {"bsonType": "objectId"},
+            "student_id": {"bsonType": "objectId"},
+            # Absent students are stored explicitly rather than inferred from
+            # a missing row: "absent" and "attendance was never taken" are
+            # different facts and later features must be able to tell them
+            # apart.
+            "status": {"enum": ["present", "absent"]},
+            # Whether the recognition pipeline proposed this status or a
+            # human set it. Audit provenance for reviewing how well matching
+            # performs -- never an authorization signal.
+            "marked_by": {"enum": ["recognition", "faculty"]},
+            "created_at": {"bsonType": "date"},
+        },
+    }
+}
+
+# NOTE: the captured photo or video is deliberately absent from both shapes
+# above, for the same reason it is absent from face_encodings -- and more
+# so, since a classroom frame holds many people at once. Only the reviewed
+# present/absent decision is persisted.
+
 COLLECTIONS = [
     {
         "name": USERS,
@@ -249,6 +312,37 @@ COLLECTIONS = [
             # Non-unique: multiple samples per student is the point -- several
             # angles/lighting conditions produce better matching than one.
             {"keys": [("student_id", 1)], "unique": False, "name": "idx_student_id"},
+        ],
+    },
+    {
+        "name": ATTENDANCE_SESSIONS,
+        "validator": ATTENDANCE_SESSIONS_VALIDATOR,
+        "indexes": [
+            # One lecture is one session. Enforced here rather than only in
+            # application code so two concurrent saves cannot both succeed.
+            {
+                "keys": [("class_id", 1), ("date", 1)],
+                "unique": True,
+                "name": "uniq_class_id_date",
+            },
+        ],
+    },
+    {
+        "name": ATTENDANCE_RECORDS,
+        "validator": ATTENDANCE_RECORDS_VALIDATOR,
+        "indexes": [
+            {
+                "keys": [("session_id", 1), ("student_id", 1)],
+                "unique": True,
+                "name": "uniq_session_id_student_id",
+            },
+            # For the per-student queries the dashboard, risk model, and
+            # low-attendance notifications will each make.
+            {
+                "keys": [("student_id", 1), ("class_id", 1)],
+                "unique": False,
+                "name": "idx_student_id_class_id",
+            },
         ],
     },
 ]

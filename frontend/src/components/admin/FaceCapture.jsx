@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import useCamera from '../../hooks/useCamera'
 
 /**
  * Two ways to produce one enrolment image: pick a file, or take a photo with
@@ -12,76 +12,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * `mediaDevices` (any page not served over HTTPS or localhost) and a denied
  * permission both leave the file input fully working, because an admin
  * enrolling from a saved photo should not be blocked by a webcam they were
- * never going to use.
+ * never going to use. The stream lifecycle itself lives in useCamera, shared
+ * with the classroom capture control.
  */
 function FaceCapture({ onCapture, disabled }) {
-  const videoRef = useRef(null)
-  const streamRef = useRef(null)
-  const [cameraOn, setCameraOn] = useState(false)
-  const [cameraError, setCameraError] = useState('')
+  const { videoRef, active, error, start, stop, capturePhoto } = useCamera()
 
-  const stopCamera = useCallback(() => {
-    const stream = streamRef.current
-    if (stream) {
-      // Every track, not just the first: stopping only the video track can
-      // leave the camera indicator lit, which reads to the person in front
-      // of it as still being recorded.
-      stream.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-    setCameraOn(false)
-  }, [])
-
-  // Unmounting while the camera runs (navigating away, selecting another
-  // student) must release the device too.
-  useEffect(() => stopCamera, [stopCamera])
-
-  // Assigned in an effect rather than straight after getUserMedia resolves:
-  // the <video> element only exists once cameraOn has re-rendered, so the
-  // ref would still be null at that point.
-  useEffect(() => {
-    if (cameraOn && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current
-    }
-  }, [cameraOn])
-
-  async function startCamera() {
-    setCameraError('')
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('This browser cannot open a camera here. Upload a photo instead.')
-      return
-    }
-
-    try {
-      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: true })
-      setCameraOn(true)
-    } catch {
-      // The specific DOMException name is not shown: "denied", "no camera",
-      // and "device busy" all leave the admin with the same next step.
-      setCameraError('Could not open the camera. Check permissions, or upload a photo instead.')
-    }
-  }
-
-  function takePhoto() {
-    const video = videoRef.current
-    if (!video) return
-
-    const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    canvas.toBlob(
-      (blob) => {
-        // The camera is released as soon as the frame is taken rather than
-        // being left running while the upload is in flight.
-        stopCamera()
-        if (blob) onCapture(blob, 'camera')
-      },
-      'image/jpeg',
-      0.92,
-    )
+  async function takePhoto() {
+    const blob = await capturePhoto()
+    if (blob) onCapture(blob, 'camera')
   }
 
   function handleFile(event) {
@@ -93,11 +32,17 @@ function FaceCapture({ onCapture, disabled }) {
 
   return (
     <div className="face-capture">
-      {cameraError && (
+      {error && (
         <p role="alert" className="hierarchy-error">
-          {cameraError}
+          {error}
         </p>
       )}
+
+      <p className="hierarchy-hint">
+        Face the camera directly, head and shoulders in frame, in even front-facing
+        light. Avoid sunglasses, glare on glasses, and a busy or reflective background.
+        The photo is not stored — only the numeric encoding derived from it.
+      </p>
 
       <div className="hierarchy-form">
         <span className="field">
@@ -111,28 +56,24 @@ function FaceCapture({ onCapture, disabled }) {
           />
         </span>
 
-        {!cameraOn && (
-          <button type="button" onClick={startCamera} disabled={disabled}>
+        {!active && (
+          <button type="button" onClick={start} disabled={disabled}>
             Use camera
           </button>
         )}
       </div>
 
-      {cameraOn && (
+      {active && (
         <div className="face-capture-live">
           <video ref={videoRef} autoPlay playsInline muted />
           <div className="hierarchy-form">
             <button type="button" onClick={takePhoto} disabled={disabled}>
               Take photo
             </button>
-            <button type="button" onClick={stopCamera}>
+            <button type="button" onClick={stop}>
               Stop camera
             </button>
           </div>
-          <p className="hierarchy-hint">
-            One face only, well lit and facing the camera. The photo is not stored — only
-            the numeric encoding derived from it.
-          </p>
         </div>
       )}
     </div>

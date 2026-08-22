@@ -86,10 +86,9 @@ class TestOutOfScopeDependenciesAreNotIntroduced:
         # ML and notification libraries still belong to later feature specs.
         # `face_recognition`/`numpy` were removed from this list when
         # .claude/specs/06-face-enrollment.md landed and legitimately
-        # introduced them -- `opencv` stays out until 07 needs video frames,
-        # and scikit-learn until the ML spec.
+        # introduced them, and `opencv` when 07-attendance-capture.md needed
+        # video frames. scikit-learn stays out until the ML spec.
         out_of_scope_packages = [
-            "opencv",
             "scikit-learn",
             "sklearn",
         ]
@@ -133,6 +132,30 @@ class TestRecognitionLibraryImportIsolation:
         assert not offenders, (
             f"face_recognition/numpy imported outside recognition/encoder.py: {offenders}"
         )
+
+
+class TestVideoLibraryImportIsolation:
+    """07-attendance-capture.md, "Rules for implementation" + Definition of
+    done: "No cv2 import exists outside backend/recognition/frames.py."
+    Keeping the import confined there (and lazy, inside functions -- see
+    frames.py itself) is what lets the rest of the backend, and the
+    01-06 test suites, run on a machine where OpenCV is not installed.
+    """
+
+    FRAMES_PATH = os.path.join(BACKEND_DIR, "recognition", "frames.py")
+    IMPORT_PATTERN = re.compile(r"^\s*(import|from)\s+cv2\b")
+
+    def test_cv2_is_only_imported_in_frames_py(self):
+        offenders = []
+        for path in _iter_backend_python_files():
+            if os.path.normpath(path) == os.path.normpath(self.FRAMES_PATH):
+                continue
+            with open(path, "r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if self.IMPORT_PATTERN.match(line):
+                        offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+        assert not offenders, f"cv2 imported outside recognition/frames.py: {offenders}"
 
 
 class TestEnvExampleFilesAndGitignore:
