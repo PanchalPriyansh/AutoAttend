@@ -11,16 +11,29 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 
+def as_utc(value):
+    """Put a stored timestamp on the same footing as a freshly built one.
+
+    pymongo hands back naive UTC datetimes, while anything the application
+    has just constructed carries a timezone. Mixing the two is not a
+    cosmetic problem: comparing them raises TypeError, and it is a real
+    bug this project has already shipped once -- the in-memory test fakes
+    store aware datetimes, so only a live database surfaces it.
+
+    Every read path that compares or serializes a stored datetime goes
+    through here, so the reattachment exists once rather than in each
+    feature that remembers to do it.
+    """
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def to_json_value(value):
     if isinstance(value, ObjectId):
         return str(value)
     if isinstance(value, datetime):
-        # pymongo returns naive UTC datetimes; without reattaching the
-        # timezone, isoformat() would drop the "+00:00" offset and imply
-        # a local time the value never had.
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.isoformat()
+        # Without reattaching the timezone, isoformat() would drop the
+        # "+00:00" offset and imply a local time the value never had.
+        return as_utc(value).isoformat()
     return value
 
 

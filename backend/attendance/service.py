@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 from pymongo.errors import DuplicateKeyError
 
+from academic.context import class_hierarchy_context
 from attendance.errors import ForbiddenError
 from attendance.validators import require_records
 from common.errors import ConflictError, NotFoundError, ValidationError
@@ -35,11 +36,7 @@ from database.schema import (
     ATTENDANCE_SESSIONS,
     CLASS_ENROLLMENTS,
     CLASSES,
-    COURSES,
-    DEPARTMENTS,
     FACE_ENCODINGS,
-    INSTITUTES,
-    SEMESTERS,
     USERS,
 )
 from recognition import encoder, frames, matcher
@@ -104,58 +101,6 @@ def _require_owned_session(db, session_id, faculty_id):
 # --- Assigned classes -------------------------------------------------
 
 
-def _hierarchy_context(db, classes):
-    """Resolve each class's course/semester/department/institute names.
-
-    Four batched `$in` lookups, one per level, rather than walking the
-    chain per class: a faculty member holding eight classes would
-    otherwise cost thirty-two queries to render one dropdown.
-
-    A missing parent leaves the name as None instead of raising. The
-    hierarchy blocks deletes while children exist, so this should be
-    unreachable; one orphaned row should not take down the whole class
-    list if it ever happens.
-    """
-    # (name in the result, collection to read, field pointing one level
-    # further up). The chain starts at each class's course_id below.
-    levels = [
-        ("course", COURSES, "semester_id"),
-        ("semester", SEMESTERS, "department_id"),
-        ("department", DEPARTMENTS, "institute_id"),
-        ("institute", INSTITUTES, None),
-    ]
-
-    # Maps each class to the id it currently points at, one level up per
-    # iteration: first its course, then that course's semester, and so on.
-    parent_ids = {
-        document["_id"]: document.get("course_id") for document in classes
-    }
-    context = {document["_id"]: {} for document in classes}
-
-    for name, collection, next_field in levels:
-        wanted = [value for value in parent_ids.values() if value is not None]
-        documents = (
-            {
-                document["_id"]: document
-                for document in db[collection].find({"_id": {"$in": wanted}})
-            }
-            if wanted
-            else {}
-        )
-
-        next_parent_ids = {}
-        for class_id, parent_id in parent_ids.items():
-            parent = documents.get(parent_id)
-            context[class_id][name] = parent.get("name") if parent else None
-            next_parent_ids[class_id] = (
-                parent.get(next_field) if parent and next_field else None
-            )
-
-        parent_ids = next_parent_ids
-
-    return context
-
-
 def _roster_counts(db, class_ids):
     """Counted in Python from one indexed query rather than an aggregation,
     for the same reason list_enrollments joins that way: the query rides
@@ -183,7 +128,7 @@ def list_assigned_classes(db, faculty_id):
     if not classes:
         return []
 
-    context = _hierarchy_context(db, classes)
+    context = class_hierarchy_context(db, classes)
     counts = _roster_counts(db, [document["_id"] for document in classes])
 
     entries = [

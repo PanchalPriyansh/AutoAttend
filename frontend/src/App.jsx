@@ -8,6 +8,7 @@ import FacultyDashboard from './routes/FacultyDashboard'
 import AttendanceCapture from './routes/faculty/AttendanceCapture'
 import AttendanceHistory from './routes/faculty/AttendanceHistory'
 import StudentDashboard from './routes/StudentDashboard'
+import AttendanceOverview from './routes/student/AttendanceOverview'
 import NotFound from './routes/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -77,6 +78,14 @@ function App() {
         element={
           <ProtectedRoute role="student">
             <StudentDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/attendance"
+        element={
+          <ProtectedRoute role="student">
+            <AttendanceOverview />
           </ProtectedRoute>
         }
       />

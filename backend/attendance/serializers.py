@@ -11,9 +11,7 @@ anything but the matched student, and nothing derived from the captured
 image or video beyond the counts the reviewer needs.
 """
 
-from datetime import timezone
-
-from common.serializers import student_summary, to_json_value
+from common.serializers import as_utc, student_summary, to_json_value
 
 # The stored `date` is a timestamp at UTC midnight, but it means a
 # calendar day. Rendering the time with it invites a reader to wonder what
@@ -24,17 +22,6 @@ DATE_FORMAT = "%Y-%m-%d"
 
 def _serialize_date(value):
     return value.strftime(DATE_FORMAT) if value is not None else None
-
-
-def _as_utc(value):
-    """Make a stored timestamp comparable to a freshly built one.
-
-    pymongo hands back naive UTC datetimes, while anything the service layer
-    has just written carries a timezone. Comparing the two directly raises,
-    so both are put on the same footing first -- the same reattachment
-    to_json_value performs, for the same reason.
-    """
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 def _is_edited(session):
@@ -55,7 +42,7 @@ def _is_edited(session):
     if created_at is None or updated_at is None:
         return False
 
-    return _as_utc(updated_at) > _as_utc(created_at)
+    return as_utc(updated_at) > as_utc(created_at)
 
 
 def _session_header(session):
@@ -189,3 +176,101 @@ def serialize_session_summary(entry):
 
 def serialize_session_summaries(entries):
     return [serialize_session_summary(entry) for entry in entries]
+
+
+# --- Student-facing shapes --------------------------------------------
+#
+# Kept apart from everything above, and built from their own allow-lists
+# rather than by trimming the faculty ones. The faculty shapes carry the
+# class -- `student_summary`, a records array, `marked_by`, `taken_by` --
+# and a student response that started as one of those and had fields
+# removed is one careless edit away from carrying them again.
+
+
+def attendance_percentage(present, total):
+    """A student's attendance as a percentage, or None when nothing has
+    been recorded yet.
+
+    None rather than 0 is the whole point of this helper existing. A class
+    where no lecture has been taken is not a class the student has missed
+    everything in, and 0% tells them the exact opposite of the truth. One
+    definition, used by the per-class, overall, and monthly figures alike,
+    so the empty case cannot be handled three different ways.
+
+    Never stored. The moment a faculty member corrects or deletes a
+    session, a stored percentage is wrong and nothing knows it.
+    """
+    if not total:
+        return None
+
+    return round(present / total * 100, 1)
+
+
+def _standing(counts):
+    """The four numbers that describe attendance at any scope: one class,
+    everything, or a single month.
+    """
+    present = counts.get("present", 0)
+    absent = counts.get("absent", 0)
+    total = counts.get("total", 0)
+
+    return {
+        "present_count": present,
+        "absent_count": absent,
+        "total_count": total,
+        "percentage": attendance_percentage(present, total),
+    }
+
+
+def _class_identity(document, context):
+    """A class as the student reads it: its own name plus the hierarchy it
+    sits in. No faculty member, no roster, no enrollment count.
+    """
+    return {
+        "id": str(document["_id"]),
+        "name": document.get("name"),
+        "course": context.get("course"),
+        "semester": context.get("semester"),
+        "department": context.get("department"),
+        "institute": context.get("institute"),
+    }
+
+
+def serialize_student_overview(entries, overall):
+    """`entries` is a list of (class_document, context, counts) triples
+    from attendance.summary.class_attendance_overview.
+    """
+    return {
+        "classes": [
+            {**_class_identity(document, context), **_standing(counts)}
+            for document, context, counts in entries
+        ],
+        "overall": _standing(overall),
+    }
+
+
+def serialize_student_class_attendance(document, context, counts, monthly, lectures):
+    """One class in detail, for the student it describes.
+
+    `monthly` stays oldest-first and `lectures` newest-first, exactly as
+    attendance.summary produced them: a trend is read left to right and a
+    log is read newest first. The two orderings in one response are
+    deliberate.
+
+    A lecture is a date and a status. Not `marked_by`, not `source`, not a
+    session id -- provenance is an audit signal for judging how well
+    recognition performs, and the stored status is the faculty member's
+    statement either way, so showing a student "a camera decided this"
+    would misrepresent both what happened and who is answerable for it.
+    """
+    return {
+        "class": _class_identity(document, context),
+        **_standing(counts),
+        "monthly": [
+            {"month": bucket["month"], **_standing(bucket)} for bucket in monthly
+        ],
+        "sessions": [
+            {"date": _serialize_date(lecture["date"]), "status": lecture["status"]}
+            for lecture in lectures
+        ],
+    }

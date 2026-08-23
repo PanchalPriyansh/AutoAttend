@@ -252,3 +252,154 @@ h1 {
   max-width: 320px;
   margin: 12px 0;
 }
+
+/* --- Student attendance dashboard ---------------------------------- */
+
+/* Present and absent are never distinguished by colour alone anywhere
+   below: every bar carries its percentage as text, and a lecture mark is
+   solid when present and hollow when absent. A red/green-only design is
+   unreadable to a colourblind student, and this is the one screen in the
+   project a student is guaranteed to open. */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.attendance-bar {
+  margin: 8px 0;
+  max-width: 420px;
+}
+
+.attendance-bar-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.attendance-bar-percent {
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.attendance-bar--large .attendance-bar-percent {
+  font-size: 2rem;
+}
+
+.attendance-bar-count {
+  font-size: 0.8rem;
+}
+
+.attendance-bar-track {
+  height: 10px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.attendance-bar--large .attendance-bar-track {
+  height: 16px;
+  border-radius: 8px;
+}
+
+.attendance-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.trend {
+  margin: 20px 0;
+}
+
+.trend-heading,
+.hierarchy-subheading {
+  color: var(--text-h);
+}
+
+.trend-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trend-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+/* A fixed height so the fill's percentage reads as a proportion of the
+   same reference in every column; without it each track would size to its
+   own content and the bars would no longer be comparable. */
+.trend-track {
+  display: flex;
+  align-items: flex-end;
+  width: 34px;
+  height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.trend-fill {
+  width: 100%;
+  background: var(--accent);
+}
+
+.trend-value {
+  color: var(--text-h);
+}
+
+.lecture-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.lecture-mark {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+}
+
+.lecture-mark--present {
+  background: var(--accent);
+}
+
+/* Hollow, not merely a different hue — the shape carries the meaning on
+   its own. */
+.lecture-mark--absent {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+.lecture-status {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.lecture-status--present {
+  color: var(--accent);
+}
+
+.lecture-status--absent {
+  color: var(--danger);
+}
