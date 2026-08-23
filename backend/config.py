@@ -29,3 +29,34 @@ class Config:
     # Scopes the refresh cookie to only be sent on the refresh call itself,
     # not on every ordinary API request.
     JWT_REFRESH_COOKIE_PATH = "/api/auth/refresh"
+
+    # --- Low-attendance notifications --------------------------------
+    #
+    # Read here, but only ever consumed by the `notify-low-attendance` CLI
+    # command via notifications/settings.py. Nothing on a request path
+    # touches these, and no route exposes them.
+    #
+    # The four credential-shaped values have no fallback, for the same
+    # reason JWT_SECRET_KEY has none: a missing credential must fail
+    # loudly where it is used, never silently send mail from a made-up
+    # default address.
+    SMTP_HOST = os.environ.get("SMTP_HOST")
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USERNAME = os.environ.get("SMTP_USERNAME")
+    SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+    SMTP_FROM_ADDRESS = os.environ.get("SMTP_FROM_ADDRESS")
+    SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "AutoAttend")
+    # Mirrors JWT_COOKIE_SECURE's idiom: anything other than an explicit
+    # "false" keeps STARTTLS on, so a typo fails closed rather than
+    # sending credentials over a plaintext connection.
+    SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() != "false"
+
+    # The attendance bar a student must clear, as a plain percentage --
+    # not a model output and not a prediction. Parsed here the way PORT
+    # is; the *range* check ((0, 100] and >= 0 respectively) belongs to
+    # notifications/settings.py, since it is a domain rule rather than a
+    # type conversion.
+    LOW_ATTENDANCE_THRESHOLD = float(os.environ.get("LOW_ATTENDANCE_THRESHOLD", "75"))
+    # How long a student is left alone about one class after being mailed
+    # about it. 0 disables the cooldown entirely.
+    NOTIFICATION_COOLDOWN_DAYS = int(os.environ.get("NOTIFICATION_COOLDOWN_DAYS", "7"))

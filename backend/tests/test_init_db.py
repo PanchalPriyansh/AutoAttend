@@ -2,9 +2,10 @@
 
 Spec contract under test (.claude/specs/02-database-setup.md, "Backend" +
 "Definition of done"; the collection count rose to eight with
-.claude/specs/06-face-enrollment.md and to ten with
-.claude/specs/07-attendance-capture.md):
-  - `init_database(db)` creates each of the ten collections declared in
+.claude/specs/06-face-enrollment.md, to ten with
+.claude/specs/07-attendance-capture.md, and to eleven with
+.claude/specs/10-low-attendance-notifications.md):
+  - `init_database(db)` creates each of the eleven collections declared in
     `schema.COLLECTIONS`, attaching its `$jsonSchema` validator, when the
     collection does not yet exist.
   - For a collection that already exists, `init_database` uses `collMod`
@@ -87,14 +88,14 @@ ALL_COLLECTION_NAMES = [spec["name"] for spec in COLLECTIONS]
 
 
 class TestInitDatabaseOnEmptyDatabase:
-    def test_creates_all_ten_collections_with_their_validators(self):
+    def test_creates_all_eleven_collections_with_their_validators(self):
         fake_db = FakeDb(existing_collections=set())
 
         result = init_database(fake_db)
 
         created_names = {call["name"] for call in fake_db.create_collection_calls}
         assert created_names == set(ALL_COLLECTION_NAMES)
-        assert len(fake_db.create_collection_calls) == 10
+        assert len(fake_db.create_collection_calls) == 11
         assert result["collections"] == ALL_COLLECTION_NAMES
 
     def test_each_created_collection_receives_its_own_declared_validator(self):
@@ -123,7 +124,7 @@ class TestInitDatabaseWhenAllCollectionsAlreadyExist:
         init_database(fake_db)
 
         assert fake_db.create_collection_calls == []
-        assert len(fake_db.command_calls) == 10
+        assert len(fake_db.command_calls) == 11
         assert {call["name"] for call in fake_db.command_calls} == set(ALL_COLLECTION_NAMES)
 
     def test_collmod_calls_re_apply_the_correct_validator_with_strict_level(self):
@@ -221,8 +222,8 @@ class TestInitDatabaseIdempotency:
 
         # First run: all 8 created. Second run: none created (they now
         # exist), all 8 updated via collMod instead.
-        assert len(fake_db.create_collection_calls) == 10
-        assert len(fake_db.command_calls) == 10
+        assert len(fake_db.create_collection_calls) == 11
+        assert len(fake_db.command_calls) == 11
 
     def test_repeated_calls_keep_issuing_index_creation_for_every_declared_index(self):
         fake_db = FakeDb(existing_collections=set())
