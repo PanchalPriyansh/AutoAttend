@@ -11,6 +11,11 @@ from common.errors import ValidationError
 from config import Config
 from database.db import get_db
 from database.init_db import init_database
+from notifications.errors import MailerNotConfiguredError, MailerSendError
+from notifications.mailer import SmtpTransport
+from notifications.reporting import format_run_report
+from notifications.service import notify_low_attendance
+from notifications.settings import load_smtp_settings, load_sweep_settings
 from recognition.validators import MAX_REQUEST_BYTES
 from routes.academic import academic_bp
 from routes.attendance import attendance_bp
@@ -111,6 +116,68 @@ def create_app():
             raise SystemExit(1)
 
         click.echo(f"Created admin user: {user['email']}")
+
+    @app.cli.command("notify-low-attendance")
+    @click.option(
+        "--dry-run",
+        is_flag=True,
+        help="List who would be emailed. Sends nothing and records nothing.",
+    )
+    def notify_low_attendance_command(dry_run):
+        """Email students whose recorded attendance is below the threshold.
+
+        A plain percentage check against what has been recorded -- there
+        is no model and nothing is predicted. The threshold and the
+        cooldown come from LOW_ATTENDANCE_THRESHOLD and
+        NOTIFICATION_COOLDOWN_DAYS.
+        """
+        try:
+            # Only the threshold and cooldown are needed to work out who
+            # is short. A dry run therefore works on a machine where SMTP
+            # has not been configured yet -- which is exactly when
+            # somebody wants to preview the list.
+            sweep_settings = load_sweep_settings(Config)
+
+            db = get_db()
+
+            if dry_run:
+                # No SmtpTransport is constructed on this branch, so
+                # "a dry run opens no connection" holds because there is
+                # nothing here that could open one.
+                result = notify_low_attendance(db, sweep_settings, dry_run=True)
+            else:
+                smtp_settings = load_smtp_settings(Config)
+                with SmtpTransport(smtp_settings) as transport:
+                    result = notify_low_attendance(
+                        db, sweep_settings, smtp_settings, transport
+                    )
+        except (MailerNotConfiguredError, MailerSendError) as exc:
+            # These messages are written to be shown: they name a setting
+            # or describe a transport failure, and never carry a
+            # credential or a recipient address.
+            click.echo(str(exc), err=True)
+            raise SystemExit(1)
+        except Exception:
+            logger.exception("Low-attendance notification run failed")
+            click.echo(
+                "Low-attendance notification run failed. See server logs for details.",
+                err=True,
+            )
+            raise SystemExit(1)
+
+        lines, error_lines = format_run_report(
+            result, sweep_settings, dry_run=dry_run
+        )
+        for line in lines:
+            click.echo(line)
+        for line in error_lines:
+            click.echo(line, err=True)
+
+        # A run that could not reach some students is not a successful
+        # run, even though the rest were mailed. Exiting non-zero is what
+        # lets a scheduled invocation notice.
+        if result["failed"]:
+            raise SystemExit(1)
 
     return app
 

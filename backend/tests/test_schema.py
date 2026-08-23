@@ -3,18 +3,20 @@
 Spec contract under test (.claude/specs/02-database-setup.md, "Database
 changes" + "Definition of done", extended by
 .claude/specs/06-face-enrollment.md,
-.claude/specs/07-attendance-capture.md, and
-.claude/specs/08-faculty-attendance-history.md):
-  - Exactly ten collections are declared: users, institutes, departments,
+.claude/specs/07-attendance-capture.md,
+.claude/specs/08-faculty-attendance-history.md, and
+.claude/specs/10-low-attendance-notifications.md):
+  - Exactly eleven collections are declared: users, institutes, departments,
     semesters, courses, classes, class_enrollments, face_encodings,
-    attendance_sessions, and attendance_records -- no ML- or
-    notification-related collections.
-  - `face_encodings` joined the list with 06-face-enrollment.md and the two
-    attendance collections with 07-attendance-capture.md, each of which owns
-    what it added. Until then those name fragments were tripwires here; each
-    was removed because its feature now exists, not to make an assertion
-    pass. The ML/notification fragments stay, because those specs have not
-    landed.
+    attendance_sessions, attendance_records, and attendance_notifications --
+    no ML-related collections.
+  - `face_encodings` joined the list with 06-face-enrollment.md, the two
+    attendance collections with 07-attendance-capture.md, and
+    `attendance_notifications` with 10-low-attendance-notifications.md, each
+    of which owns what it added. Until then those name fragments were
+    tripwires here; each was removed because its feature now exists, not to
+    make an assertion pass. The ML fragments stay, permanently -- that spec
+    is cancelled, not pending.
   - Each collection has a `$jsonSchema`-shaped validator with the required
     fields listed in the spec, and `users.role` is constrained to the
     `admin` | `faculty` | `student` enum.
@@ -40,21 +42,22 @@ ALL_COLLECTION_NAMES = {
     schema.FACE_ENCODINGS,
     schema.ATTENDANCE_SESSIONS,
     schema.ATTENDANCE_RECORDS,
+    schema.ATTENDANCE_NOTIFICATIONS,
 }
 
 # Substrings that would indicate a collection this project should not have.
-# "face"/"encoding" were removed when 06-face-enrollment.md landed and
-# "attendance" when 07-attendance-capture.md did.
+# "face"/"encoding" were removed when 06-face-enrollment.md landed,
+# "attendance" when 07-attendance-capture.md did, and "notification" when
+# 10-low-attendance-notifications.md earned `attendance_notifications`.
 #
 # "ml"/"predict"/"risk" are permanent: AutoAttend records attendance and
 # nothing else -- no marks, no grades, no assessments, and no model to feed
-# them to (see CLAUDE.md, "Warnings and things to avoid"). "notification" is
-# temporary and the low-attendance email spec should remove it.
+# them to (see CLAUDE.md, "Warnings and things to avoid"). Nothing in this
+# project can ever earn these back.
 OUT_OF_SCOPE_NAME_FRAGMENTS = [
     "ml",
     "predict",
     "risk",
-    "notification",
 ]
 
 EXPECTED_REQUIRED_FIELDS = {
@@ -97,6 +100,16 @@ EXPECTED_REQUIRED_FIELDS = {
         "marked_by",
         "created_at",
     },
+    schema.ATTENDANCE_NOTIFICATIONS: {
+        "student_id",
+        "class_id",
+        "email",
+        "threshold",
+        "percentage",
+        "present_count",
+        "total_count",
+        "sent_at",
+    },
 }
 
 # (keys, unique) signatures per collection, per spec's "Database changes"
@@ -137,6 +150,13 @@ EXPECTED_INDEX_SIGNATURES = {
         ((("session_id", 1), ("student_id", 1)), True),
         ((("student_id", 1), ("class_id", 1)), False),
     },
+    # Non-unique on purpose: the same student may be warned about the same
+    # class again in a later term. See the comment on the index in
+    # schema.py -- a unique key here would silently turn the cooldown into
+    # "warned once, ever".
+    schema.ATTENDANCE_NOTIFICATIONS: {
+        ((("student_id", 1), ("class_id", 1), ("sent_at", -1)), False),
+    },
 }
 
 
@@ -147,7 +167,7 @@ def _spec_for(collection_name):
 
 
 class TestCollectionNameConstants:
-    def test_all_ten_collection_name_constants_are_defined(self):
+    def test_all_eleven_collection_name_constants_are_defined(self):
         assert schema.USERS == "users"
         assert schema.INSTITUTES == "institutes"
         assert schema.DEPARTMENTS == "departments"
@@ -158,17 +178,18 @@ class TestCollectionNameConstants:
         assert schema.FACE_ENCODINGS == "face_encodings"
         assert schema.ATTENDANCE_SESSIONS == "attendance_sessions"
         assert schema.ATTENDANCE_RECORDS == "attendance_records"
+        assert schema.ATTENDANCE_NOTIFICATIONS == "attendance_notifications"
 
 
 class TestCollectionsRegistry:
-    def test_collections_declares_exactly_the_ten_expected_names(self):
+    def test_collections_declares_exactly_the_eleven_expected_names(self):
         declared_names = {spec["name"] for spec in schema.COLLECTIONS}
 
         assert declared_names == ALL_COLLECTION_NAMES
         # Hardcoded rather than derived from COLLECTIONS: the point is to
         # notice an unplanned collection being added, which a derived count
         # would silently accept.
-        assert len(schema.COLLECTIONS) == 10
+        assert len(schema.COLLECTIONS) == 11
 
     def test_no_out_of_scope_collection_names_are_declared(self):
         for spec in schema.COLLECTIONS:

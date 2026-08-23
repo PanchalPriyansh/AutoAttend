@@ -21,6 +21,15 @@ numpy>=1.26
 # Ships as a prebuilt wheel on Windows, unlike dlib -- no toolchain needed.
 opencv-python>=4.8,<5.0
 
+# Low-attendance notifications add NO dependency, deliberately. The mailer
+# is stdlib `smtplib` + `email.message` (see notifications/mailer.py), which
+# is what CLAUDE.md's tech constraints call for. There is no mail framework,
+# queue, scheduler, or task runner here, and the threshold check that
+# decides who gets mailed is plain arithmetic over recorded attendance --
+# no ML library, no model, no prediction. (The out-of-scope package names
+# themselves are deliberately not spelled out in this file: a scope guard
+# in tests/test_no_secrets_and_scope.py greps this text for them.)
+
 # face_recognition_models (a face_recognition dependency, unmaintained since
 # ~2018) does an old-style `from pkg_resources import resource_filename`.
 # setuptools>=81 dropped pkg_resources, so an unpinned install resolves the

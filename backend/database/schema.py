@@ -25,6 +25,7 @@ CLASS_ENROLLMENTS = "class_enrollments"
 FACE_ENCODINGS = "face_encodings"
 ATTENDANCE_SESSIONS = "attendance_sessions"
 ATTENDANCE_RECORDS = "attendance_records"
+ATTENDANCE_NOTIFICATIONS = "attendance_notifications"
 
 USERS_VALIDATOR = {
     "$jsonSchema": {
@@ -238,6 +239,51 @@ ATTENDANCE_RECORDS_VALIDATOR = {
 # so, since a classroom frame holds many people at once. Only the reviewed
 # present/absent decision is persisted.
 
+ATTENDANCE_NOTIFICATIONS_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "student_id",
+            "class_id",
+            "email",
+            "threshold",
+            "percentage",
+            "present_count",
+            "total_count",
+            "sent_at",
+        ],
+        "properties": {
+            "student_id": {"bsonType": "objectId"},
+            # One row per class, not per email. A student short in three
+            # classes gets one message and three documents, because the
+            # question this collection answers is "when was this student
+            # last warned about *this class*" -- which is what the
+            # cooldown is keyed on.
+            "class_id": {"bsonType": "objectId"},
+            # Where it actually went, captured at send time rather than
+            # read back off `users` later: an address that has since been
+            # corrected should not rewrite the history of what was sent
+            # to the old one.
+            "email": {"bsonType": "string", "minLength": 1},
+            # The bar in force for this send, and the figure that tripped
+            # it. Stored together so a past notification stays explicable
+            # after LOW_ATTENDANCE_THRESHOLD is changed -- without the
+            # threshold beside it, a recorded 72% tells nobody whether it
+            # was below the bar at the time.
+            "threshold": {"bsonType": "double"},
+            "percentage": {"bsonType": "double"},
+            "present_count": {"bsonType": "int"},
+            "total_count": {"bsonType": "int"},
+            "sent_at": {"bsonType": "date"},
+        },
+    }
+}
+
+# NOTE: the message body is deliberately absent. Only the figures that
+# produced it are kept, so this collection can be read freely without
+# re-exposing what was written to a student. Nothing here holds an SMTP
+# host, a credential, or biometric data.
+
 COLLECTIONS = [
     {
         "name": USERS,
@@ -348,6 +394,23 @@ COLLECTIONS = [
                 "keys": [("student_id", 1), ("class_id", 1)],
                 "unique": False,
                 "name": "idx_student_id_class_id",
+            },
+        ],
+    },
+    {
+        "name": ATTENDANCE_NOTIFICATIONS,
+        "validator": ATTENDANCE_NOTIFICATIONS_VALIDATOR,
+        "indexes": [
+            # Deliberately NOT unique. This is a history, not a latch: a
+            # student who is still short two weeks later should be warned
+            # again, so the same (student_id, class_id) pair must be able
+            # to appear more than once. What stops repeat mail is the
+            # cooldown window read off `sent_at` -- a unique key here
+            # would silently turn that into "warned once, ever".
+            {
+                "keys": [("student_id", 1), ("class_id", 1), ("sent_at", -1)],
+                "unique": False,
+                "name": "idx_student_id_class_id_sent_at",
             },
         ],
     },

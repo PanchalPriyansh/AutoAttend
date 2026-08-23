@@ -57,12 +57,19 @@ def _is_role_portal_namespace(path, prefix):
 # landed and legitimately introduced those routes, the same way
 # 06-face-enrollment.md earned face enrolment.
 #
-# The two remaining entries are not the same kind of thing:
-#   - "prediction"/"risk" are permanent. AutoAttend does no model training
-#     or prediction, and CLAUDE.md now rules the academic-risk model out of
-#     scope entirely -- so nothing should ever earn these back.
-#   - "notification" is temporary, and the low-attendance email spec is
-#     expected to remove it the way 07 removed "attendance".
+# All three remaining entries are permanent, for two different reasons:
+#   - "prediction"/"risk". AutoAttend does no model training or
+#     prediction, and CLAUDE.md rules the academic-risk model out of scope
+#     entirely -- so nothing should ever earn these back.
+#   - "notification". This one was expected to be retired the way 07
+#     retired "attendance", and it was not:
+#     .claude/specs/10-low-attendance-notifications.md shipped the
+#     low-attendance email as a CLI command (`flask
+#     notify-low-attendance`) with deliberately no route, no blueprint,
+#     and no HTTP trigger of any kind. So the guard stays, and it now
+#     asserts a real property of the shipped feature rather than the
+#     absence of an unwritten one. If a later spec adds an admin-facing
+#     trigger, that spec owns removing this entry.
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
     "prediction",
     "risk",
@@ -159,10 +166,12 @@ class TestAppFactory:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
                     "risk prediction is permanently out of scope for this "
-                    "project, and notifications are not implemented until "
-                    "their own feature spec. (Face *enrolment* is in "
-                    "scope as of 06-face-enrollment.md and classroom "
-                    "recognition as of 07-attendance-capture.md.)"
+                    "project, and low-attendance notifications are "
+                    "deliberately CLI-only -- `flask notify-low-attendance` "
+                    "is their entire trigger surface, so no route should "
+                    "exist for them either. (Face *enrolment* is in scope "
+                    "as of 06-face-enrollment.md and classroom recognition "
+                    "as of 07-attendance-capture.md.)"
                 )
 
 
