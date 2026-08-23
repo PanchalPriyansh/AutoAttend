@@ -22,7 +22,6 @@ Quick facts to keep in mind while reviewing:
 - **Authorization**: Role-based access control
 - **Roles**: Admin, Faculty, Student
 - **Face Recognition**: OpenCV / face_recognition / NumPy
-- **ML**: scikit-learn
 - **Notifications**: SMTP/email services
 
 Sensitive configuration such as database credentials, JWT secrets, SMTP credentials, API keys, and Cloudinary secrets must be kept outside source code.

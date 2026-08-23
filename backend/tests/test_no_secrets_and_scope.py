@@ -83,19 +83,24 @@ class TestOutOfScopeDependenciesAreNotIntroduced:
         with open(requirements_path, "r", encoding="utf-8") as handle:
             content = handle.read().lower()
 
-        # ML and notification libraries still belong to later feature specs.
         # `face_recognition`/`numpy` were removed from this list when
         # .claude/specs/06-face-enrollment.md landed and legitimately
         # introduced them, and `opencv` when 07-attendance-capture.md needed
-        # video frames. scikit-learn stays out until the ML spec.
+        # video frames.
+        #
+        # scikit-learn is different: it is not waiting for a spec, it is
+        # ruled out. AutoAttend records attendance and does no training or
+        # prediction, so nothing in this project can ever earn it (see
+        # CLAUDE.md, "Tech constraints"). The low-attendance email needs no
+        # dependency either -- `smtplib` and `email` are in the stdlib.
         out_of_scope_packages = [
             "scikit-learn",
             "sklearn",
         ]
         for package in out_of_scope_packages:
             assert package not in content, (
-                f"'{package}' belongs to a later feature spec and should not "
-                "be a dependency yet"
+                f"'{package}' is out of scope for this project: AutoAttend "
+                "does no model training or prediction"
             )
 
     def test_requirements_txt_includes_the_documented_foundation_dependencies(self):

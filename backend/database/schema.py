@@ -342,8 +342,8 @@ COLLECTIONS = [
                 "unique": True,
                 "name": "uniq_session_id_student_id",
             },
-            # For the per-student queries the dashboard, risk model, and
-            # low-attendance notifications will each make.
+            # For the per-student queries the student dashboard and the
+            # low-attendance notifications each make.
             {
                 "keys": [("student_id", 1), ("class_id", 1)],
                 "unique": False,

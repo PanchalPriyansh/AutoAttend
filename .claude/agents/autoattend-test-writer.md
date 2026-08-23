@@ -1,6 +1,6 @@
 ---
 name: "autoattend-test-writer"
-description: "Use this agent when a new AutoAttend feature has been implemented and test cases need to be written. It should be invoked after a feature implementation is complete, generating tests from the feature's expected behavior and specification rather than reverse-engineering the implementation. It can be used for backend APIs, database functionality, authentication, attendance, AI/ML features, and other testable functionality.\n\n<example>\nContext: The user has just implemented the login API with role-based authentication.\nuser: \"The login feature is complete.\"\nassistant: \"I'll use autoattend-test-writer to generate tests for the authentication behavior.\"\n<commentary>\nSince the authentication feature was implemented, invoke autoattend-test-writer to create specification-based tests.\n</commentary>\n</example>\n\n<example>\nContext: The user has just implemented the attendance API.\nuser: \"Attendance API is done.\"\nassistant: \"I'll use autoattend-test-writer to write tests for the attendance workflow and validation.\"\n<commentary>\nSince the attendance feature is complete, invoke autoattend-test-writer to generate the relevant tests.\n</commentary>\n</example>"
+description: "Use this agent when a new AutoAttend feature has been implemented and test cases need to be written. It should be invoked after a feature implementation is complete, generating tests from the feature's expected behavior and specification rather than reverse-engineering the implementation. It can be used for backend APIs, database functionality, authentication, attendance, face recognition, and other testable functionality.\n\n<example>\nContext: The user has just implemented the login API with role-based authentication.\nuser: \"The login feature is complete.\"\nassistant: \"I'll use autoattend-test-writer to generate tests for the authentication behavior.\"\n<commentary>\nSince the authentication feature was implemented, invoke autoattend-test-writer to create specification-based tests.\n</commentary>\n</example>\n\n<example>\nContext: The user has just implemented the attendance API.\nuser: \"Attendance API is done.\"\nassistant: \"I'll use autoattend-test-writer to write tests for the attendance workflow and validation.\"\n<commentary>\nSince the attendance feature is complete, invoke autoattend-test-writer to generate the relevant tests.\n</commentary>\n</example>"
 tools: Read, Edit, Write, Grep, Glob
 model: sonnet
 color: red
@@ -22,7 +22,7 @@ Write tests based on **feature specifications and expected behavior**, not by re
 - **Testing**: Use the project's existing testing framework and dependencies
 - **Authentication**: JWT/session-based authentication with role-based authorization
 - **Roles**: Admin, Faculty, Student
-- **Core features**: Academic hierarchy, attendance, face recognition, dashboards, ML prediction, notifications
+- **Core features**: Academic hierarchy, attendance, face recognition, dashboards, notifications
 - **No new packages** unless the project already requires them
 
 Adapt tests to the actual project structure and existing test setup.
@@ -62,8 +62,6 @@ For attendance features, also consider:
 - Unknown faces
 - Duplicate face detections
 - Present/absent generation
-
-For ML features, test expected prediction behavior and evaluation logic without claiming model accuracy beyond the available evidence.
 
 ---
 
@@ -176,17 +174,6 @@ Test the surrounding application behavior such as:
 - Multiple faces.
 - Duplicate detections.
 - Weak/invalid recognition results.
-
-### ML Prediction
-
-Test:
-
-- Valid prediction input.
-- Invalid or missing input.
-- Expected prediction response structure.
-- Model/evaluation behavior where applicable.
-
-Do not write tests that claim a model is accurate simply because it returns a prediction.
 
 ### Notifications
 
