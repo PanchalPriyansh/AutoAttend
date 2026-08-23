@@ -189,6 +189,12 @@ ATTENDANCE_SESSIONS_VALIDATOR = {
             "taken_by": {"bsonType": "objectId"},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"},
+            # Who last corrected this session after it was recorded.
+            # Deliberately optional and absent until an edit happens, so
+            # every session written before attendance history existed stays
+            # valid without a backfill. `taken_by` still names whoever took
+            # the lecture; correcting a session never overwrites that.
+            "updated_by": {"bsonType": "objectId"},
         },
     }
 }

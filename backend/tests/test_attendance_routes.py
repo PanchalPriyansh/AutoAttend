@@ -20,6 +20,26 @@ changes" + "Rules for implementation" + "Definition of done"):
     never a crash, and does not take down unrelated routes.
   - No response anywhere contains an `encoding` vector.
 
+Also covers 08-faculty-attendance-history.md's four additions to this
+blueprint ("APIs" + "Rules for implementation" + "Definition of done"):
+  - `GET /api/attendance/sessions` -- newest-first, `records`-free rows,
+    `total`/`limit`/`skip` in the envelope, `from`/`to`/`limit`/`skip`
+    validated to `400`, and an owned class with no sessions answers
+    `200` with `[]`/`total: 0` rather than `404`.
+  - `GET /api/attendance/sessions/<id>` -- the full session + records,
+    `404` for an unknown id, `403` for someone else's session.
+  - `PUT /api/attendance/sessions/<id>` -- flips statuses only;
+    `class_id`/`date`/`source`/`created_at`/`taken_by` never change;
+    `updated_by` is the caller, never the body; a changed row is stored
+    `marked_by: "faculty"` and an unchanged row keeps its stored value;
+    a malformed payload is `400` and changes nothing.
+  - `DELETE /api/attendance/sessions/<id>` -- `{"deleted": true}`, `200`,
+    cascades to the session's records, and the same class+date can be
+    saved again afterwards without a `409`.
+  - Every one of the four is faculty-owner-only (`401`/`403`/`404`,
+    never `409`, never `503`), and `PUT`/`DELETE` enforce CSRF the same
+    way `POST /api/attendance` already does.
+
 `routes.auth.get_db` and `routes.attendance.get_db` are monkeypatched to
 the same in-memory fake db (attendance_test_helpers.py) so a real
 `/api/auth/login` call mints genuine JWT + CSRF cookies while the
@@ -37,8 +57,10 @@ from attendance_test_helpers import (
     build_owned_class_with_roster,
     fake_closest_match,
     make_class,
+    make_class_enrollment,
     make_face_encoding,
     make_fake_attendance_db,
+    make_session_with_records,
     make_user,
     synthetic_encoding,
 )
@@ -237,6 +259,47 @@ def _all_four_endpoint_requests(client, headers):
             json={"class_id": class_id, "date": date, "source": "manual", "records": []},
             headers=headers,
         ),
+    ]
+
+
+# --- history request builders (08-faculty-attendance-history.md) --------------
+
+
+def _list_sessions(client, class_id, headers=None, *, query=""):
+    suffix = f"&{query}" if query else ""
+    return client.get(
+        f"/api/attendance/sessions?class_id={class_id}{suffix}", headers=headers or {}
+    )
+
+
+def _get_session_by_id(client, session_id, headers=None):
+    return client.get(f"/api/attendance/sessions/{session_id}", headers=headers or {})
+
+
+def _update_session(client, session_id, headers=None, *, records=None):
+    body = {"records": records if records is not None else []}
+    return client.put(
+        f"/api/attendance/sessions/{session_id}", json=body, headers=headers or {}
+    )
+
+
+def _delete_session_request(client, session_id, headers=None):
+    return client.delete(f"/api/attendance/sessions/{session_id}", headers=headers or {})
+
+
+def _all_history_endpoint_requests(client, headers):
+    """One representative request per 08-faculty-attendance-history.md
+    endpoint -- the plural/id-addressed history routes, distinct from the
+    singular capture-flow routes `_all_four_endpoint_requests` covers.
+    Dummy ids are fine: role_required short-circuits first.
+    """
+    class_id = str(ObjectId())
+    session_id = str(ObjectId())
+    return [
+        _list_sessions(client, class_id, headers),
+        _get_session_by_id(client, session_id, headers),
+        _update_session(client, session_id, headers, records=[]),
+        _delete_session_request(client, session_id, headers),
     ]
 
 
@@ -872,6 +935,858 @@ class TestSaveSessionRoute:
         assert response.status_code == 200
         assert response.get_json()["records"][0]["status"] == "absent"
         assert len(list(fake_db[ATTENDANCE_SESSIONS].find({}))) == 1
+
+
+# --- GET /api/attendance/sessions (08-faculty-attendance-history.md) ----------
+
+
+class TestListSessionsRoute:
+    def test_returns_sessions_newest_first_with_the_documented_row_shape(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        oldest, oldest_records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "absent"], date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        newest, newest_records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present"], date=datetime(2020, 1, 15, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[oldest, newest],
+                attendance_records=oldest_records + newest_records,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["total"] == 2
+        assert body["limit"] == 50
+        assert body["skip"] == 0
+        assert [s["id"] for s in body["sessions"]] == [str(newest["_id"]), str(oldest["_id"])]
+        entry = body["sessions"][0]
+        assert set(entry.keys()) == {
+            "id", "class_id", "date", "source", "taken_by", "created_at",
+            "updated_at", "updated_by", "edited", "present_count",
+            "absent_count", "total_count",
+        }
+        assert "records" not in entry
+        assert entry["present_count"] == 2
+        assert entry["absent_count"] == 0
+        assert entry["total_count"] == 2
+
+    def test_an_owned_class_with_no_sessions_returns_200_empty_list_not_404(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["sessions"] == []
+        assert body["total"] == 0
+
+    def test_from_and_to_filter_inclusively(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        jan1, jan1_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        jan15, jan15_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 15, tzinfo=timezone.utc),
+        )
+        jan31, jan31_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 31, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[jan1, jan15, jan31],
+                attendance_records=jan1_records + jan15_records + jan31_records,
+            )
+
+            response = _list_sessions(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-01-15",
+            )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert {s["id"] for s in body["sessions"]} == {str(jan1["_id"]), str(jan15["_id"])}
+        assert body["total"] == 2
+
+    def test_a_to_earlier_than_from_returns_400(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(
+                client, klass["_id"], headers, query="from=2020-02-01&to=2020-01-01",
+            )
+
+        assert response.status_code == 400
+
+    def test_a_malformed_from_returns_400(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers, query="from=not-a-date")
+
+        assert response.status_code == 400
+
+    def test_a_negative_skip_returns_400(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers, query="skip=-1")
+
+        assert response.status_code == 400
+
+    def test_a_non_integer_limit_returns_400(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers, query="limit=not-a-number")
+
+        assert response.status_code == 400
+
+    def test_limit_above_the_maximum_is_clamped_to_200_not_rejected(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _list_sessions(client, klass["_id"], headers, query="limit=5000")
+
+        assert response.status_code == 200
+        assert response.get_json()["limit"] == 200
+
+    def test_skip_pages_without_duplicating_or_dropping_and_total_is_unpaged(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        sessions_and_records = [
+            make_session_with_records(
+                klass["_id"], students, date=datetime(2020, 1, day, tzinfo=timezone.utc),
+            )
+            for day in (1, 10, 20)
+        ]
+        sessions = [pair[0] for pair in sessions_and_records]
+        records = [record for pair in sessions_and_records for record in pair[1]]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=sessions, attendance_records=records,
+            )
+
+            page1 = _list_sessions(client, klass["_id"], headers, query="limit=1&skip=0").get_json()
+            page2 = _list_sessions(client, klass["_id"], headers, query="limit=1&skip=1").get_json()
+            page3 = _list_sessions(client, klass["_id"], headers, query="limit=1&skip=2").get_json()
+
+        newest_first = [str(s["_id"]) for s in sorted(sessions, key=lambda s: s["date"], reverse=True)]
+        seen = [s["id"] for page in (page1, page2, page3) for s in page["sessions"]]
+        assert seen == newest_first
+        assert page1["total"] == page2["total"] == page3["total"] == 3
+
+    def test_missing_class_id_returns_400(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = client.get("/api/attendance/sessions", headers=headers)
+
+        assert response.status_code == 400
+
+    def test_malformed_class_id_returns_400(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _list_sessions(client, "not-a-valid-id", headers)
+
+        assert response.status_code == 400
+
+    def test_nonexistent_class_returns_404(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _list_sessions(client, ObjectId(), headers)
+
+        assert response.status_code == 404
+
+    def test_a_class_assigned_to_someone_else_returns_403(self, app_instance, monkeypatch):
+        klass = make_class(ObjectId(), faculty_id=ObjectId())
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty", classes=[klass])
+
+            response = _list_sessions(client, klass["_id"], headers)
+
+        assert response.status_code == 403
+
+
+# --- GET /api/attendance/sessions/<id> (08-faculty-attendance-history.md) -----
+
+
+class TestGetSessionByIdRoute:
+    def test_returns_the_full_session_with_records_and_absences_explicit(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "absent"],
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _get_session_by_id(client, session["_id"], headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["id"] == str(session["_id"])
+        assert len(body["records"]) == 2
+        statuses = {r["status"] for r in body["records"]}
+        assert statuses == {"present", "absent"}
+        assert body["edited"] is False
+        assert body["updated_by"] is None
+
+    def test_nonexistent_session_id_returns_404(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _get_session_by_id(client, ObjectId(), headers)
+
+        assert response.status_code == 404
+
+    def test_a_session_under_someone_elses_class_returns_403(self, app_instance, monkeypatch):
+        klass, students, enrollments = build_owned_class_with_roster(ObjectId(), student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as(
+                monkeypatch, client, "faculty",
+                extra_users=students, classes=[klass], class_enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _get_session_by_id(client, session["_id"], headers)
+
+        assert response.status_code == 403
+
+    def test_malformed_session_id_returns_400(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _get_session_by_id(client, "not-a-valid-id", headers)
+
+        assert response.status_code == 400
+
+
+# --- PUT /api/attendance/sessions/<id> (08-faculty-attendance-history.md) -----
+
+
+class TestUpdateSessionRoute:
+    def test_flips_a_students_status_and_returns_200(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["records"][0]["status"] == "absent"
+        assert body["absent_count"] == 1
+        assert body["present_count"] == 0
+
+    def test_class_id_date_source_created_at_and_taken_by_are_unchanged(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        original_taken_by = faculty_id
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(
+            klass["_id"], students, source="photo", taken_by=original_taken_by,
+            date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+
+        body = response.get_json()
+        assert body["class_id"] == str(klass["_id"])
+        assert body["date"] == "2020-01-01"
+        assert body["source"] == "photo"
+        assert body["taken_by"] == str(original_taken_by)
+        assert body["created_at"] == session["created_at"].isoformat()
+
+    def test_updated_by_is_the_caller_never_the_body(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        spoofed_id = str(ObjectId())
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+            real_id = _acting_user_id(client)
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[
+                    {
+                        "student_id": str(students[0]["_id"]), "status": "absent",
+                        "marked_by": "faculty", "updated_by": spoofed_id,
+                    }
+                ],
+            )
+
+        body = response.get_json()
+        assert body["updated_by"] == real_id
+        assert body["updated_by"] != spoofed_id
+
+    def test_edited_and_updated_at_reflect_an_edit(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            before = _get_session_by_id(client, session["_id"], headers).get_json()
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+
+        assert before["edited"] is False
+        assert before["updated_by"] is None
+        after = response.get_json()
+        assert after["edited"] is True
+        assert after["updated_by"] is not None
+        assert after["updated_at"] >= before["updated_at"]
+
+    def test_a_changed_row_is_stored_faculty_and_an_unchanged_row_keeps_recognition(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present"],
+            marked_by=["recognition", "recognition"],
+        )
+        with app_instance.test_client() as client:
+            fake_db, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            _update_session(
+                client, session["_id"], headers,
+                records=[
+                    # Unchanged: resubmitted exactly as stored.
+                    {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+                    # Changed: status flipped.
+                    {"student_id": str(students[1]["_id"]), "status": "absent", "marked_by": "faculty"},
+                ],
+            )
+
+        stored = {r["student_id"]: r for r in fake_db[ATTENDANCE_RECORDS].find({})}
+        assert stored[students[0]["_id"]]["marked_by"] == "recognition"
+        assert stored[students[1]["_id"]]["marked_by"] == "faculty"
+
+    def test_missing_a_session_student_returns_400_and_changes_nothing(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present"],
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+            after = _get_session_by_id(client, session["_id"], headers).get_json()
+
+        assert response.status_code == 400
+        assert all(r["status"] == "present" for r in after["records"])
+
+    def test_a_duplicate_student_returns_400_and_changes_nothing(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[
+                    {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+                    {"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"},
+                ],
+            )
+            after = _get_session_by_id(client, session["_id"], headers).get_json()
+
+        assert response.status_code == 400
+        assert after["records"][0]["status"] == "present"
+
+    def test_a_student_not_in_the_session_returns_400_and_changes_nothing(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[
+                    {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+                    {"student_id": str(ObjectId()), "status": "present", "marked_by": "faculty"},
+                ],
+            )
+            after = _get_session_by_id(client, session["_id"], headers).get_json()
+
+        assert response.status_code == 400
+        assert len(after["records"]) == 1
+
+    def test_an_invalid_status_returns_400_and_changes_nothing(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "late", "marked_by": "faculty"}],
+            )
+            after = _get_session_by_id(client, session["_id"], headers).get_json()
+
+        assert response.status_code == 400
+        assert after["records"][0]["status"] == "present"
+
+    def test_an_invalid_marked_by_returns_400_and_changes_nothing(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "robot"}],
+            )
+            after = _get_session_by_id(client, session["_id"], headers).get_json()
+
+        assert response.status_code == 400
+        assert after["records"][0]["marked_by"] == "recognition"
+
+    def test_edit_is_validated_against_the_sessions_students_not_the_current_roster(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        new_student = make_user(email=f"new-{ObjectId()}@college.test", role="student")
+        new_enrollment = make_class_enrollment(klass["_id"], new_student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students + [new_student],
+                enrollments=enrollments + [new_enrollment],
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            # Enrolling a new student since the lecture does not require
+            # them in an otherwise-valid edit.
+            still_valid = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+            # Including the newly enrolled student is rejected: they were
+            # not part of this session.
+            rejected = _update_session(
+                client, session["_id"], headers,
+                records=[
+                    {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+                    {"student_id": str(new_student["_id"]), "status": "present", "marked_by": "faculty"},
+                ],
+            )
+
+        assert still_valid.status_code == 200
+        assert rejected.status_code == 400
+
+    def test_nonexistent_session_id_returns_404(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _update_session(client, ObjectId(), headers, records=[])
+
+        assert response.status_code == 404
+
+    def test_a_session_under_someone_elses_class_returns_403(self, app_instance, monkeypatch):
+        klass, students, enrollments = build_owned_class_with_roster(ObjectId(), student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as(
+                monkeypatch, client, "faculty",
+                extra_users=students, classes=[klass], class_enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+
+        assert response.status_code == 403
+
+    def test_malformed_session_id_returns_400(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _update_session(client, "not-a-valid-id", headers, records=[])
+
+        assert response.status_code == 400
+
+
+# --- DELETE /api/attendance/sessions/<id> (08-faculty-attendance-history.md) --
+
+
+class TestDeleteSessionRoute:
+    def test_deletes_the_session_and_its_records_and_returns_deleted_true(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            fake_db, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _delete_session_request(client, session["_id"], headers)
+
+        assert response.status_code == 200
+        # Matches routes/faces.py's delete shape exactly, per the spec's
+        # documented response -- {"deleted": true} and nothing else, so a
+        # count or id an attacker didn't already know is never handed back.
+        assert response.get_json() == {"deleted": True}
+        assert fake_db[ATTENDANCE_SESSIONS].find_one({"_id": session["_id"]}) is None
+        assert list(fake_db[ATTENDANCE_RECORDS].find({"session_id": session["_id"]})) == []
+
+    def test_a_subsequent_get_of_the_deleted_id_returns_404(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            _delete_session_request(client, session["_id"], headers)
+            response = _get_session_by_id(client, session["_id"], headers)
+
+        assert response.status_code == 404
+
+    def test_deleting_one_session_leaves_other_sessions_of_the_same_class_untouched(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session_a, records_a = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        session_b, records_b = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 2, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session_a, session_b], attendance_records=records_a + records_b,
+            )
+
+            _delete_session_request(client, session_a["_id"], headers)
+            response = _get_session_by_id(client, session_b["_id"], headers)
+
+        assert response.status_code == 200
+        assert len(response.get_json()["records"]) == 1
+
+    def test_after_delete_the_same_class_and_date_can_be_saved_again_without_409(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            _delete_session_request(client, session["_id"], headers)
+            response = _save(
+                client, headers, class_id=klass["_id"], date="2020-01-01", source="manual",
+                records=[{"student_id": str(students[0]["_id"]), "status": "present"}],
+            )
+
+        assert response.status_code == 201
+
+    def test_nonexistent_session_id_returns_404(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _delete_session_request(client, ObjectId(), headers)
+
+        assert response.status_code == 404
+
+    def test_a_session_under_someone_elses_class_returns_403(self, app_instance, monkeypatch):
+        klass, students, enrollments = build_owned_class_with_roster(ObjectId(), student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as(
+                monkeypatch, client, "faculty",
+                extra_users=students, classes=[klass], class_enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _delete_session_request(client, session["_id"], headers)
+
+        assert response.status_code == 403
+
+    def test_malformed_session_id_returns_400(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _delete_session_request(client, "not-a-valid-id", headers)
+
+        assert response.status_code == 400
+
+
+# --- History: class-scoped ownership across all four endpoints ----------------
+
+
+class TestHistoryClassScopedAuthorization:
+    def test_an_unassigned_class_returns_403_not_500_on_list(self, app_instance, monkeypatch):
+        klass = make_class(ObjectId(), faculty_id=None)
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty", classes=[klass])
+
+            response = _list_sessions(client, klass["_id"], headers)
+
+        assert response.status_code == 403
+
+    def test_a_nonexistent_class_returns_404_not_500_on_list(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            response = _list_sessions(client, ObjectId(), headers)
+
+        assert response.status_code == 404
+
+    def test_none_of_the_four_history_endpoints_return_409_or_503(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+            _stub_recognition(monkeypatch, recognition_available=False, video_available=False)
+
+            responses = [
+                _list_sessions(client, klass["_id"], headers),
+                _get_session_by_id(client, session["_id"], headers),
+                _update_session(
+                    client, session["_id"], headers,
+                    records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+                ),
+                _delete_session_request(client, session["_id"], headers),
+            ]
+
+        codes = [r.status_code for r in responses]
+        assert 409 not in codes
+        assert 503 not in codes
+
+
+# --- History: role enforcement -------------------------------------------------
+
+
+class TestHistoryRoleEnforcement:
+    def test_admin_receives_403_on_all_four_history_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "admin")
+
+            responses = _all_history_endpoint_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_student_receives_403_on_all_four_history_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "student")
+
+            responses = _all_history_endpoint_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_unauthenticated_receives_401_on_all_four_history_endpoints(
+        self, app_instance, monkeypatch
+    ):
+        fake_db = make_fake_attendance_db()
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            responses = _all_history_endpoint_requests(client, headers={})
+
+        assert all(r.status_code == 401 for r in responses), [r.status_code for r in responses]
+
+
+# --- History: CSRF enforcement -------------------------------------------------
+
+
+class TestHistoryCsrfEnforcement:
+    def test_put_without_a_csrf_header_is_rejected(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        email = f"owner-{klass['faculty_id']}@college.test"
+        faculty = make_user(email=email, password=FAKE_PASSWORD, role="faculty")
+        faculty["_id"] = klass["faculty_id"]
+        fake_db = make_fake_attendance_db(
+            users=[faculty] + students, classes=[klass], class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, email, FAKE_PASSWORD)
+
+            response = client.put(
+                f"/api/attendance/sessions/{session['_id']}",
+                json={"records": [{"student_id": str(students[0]["_id"]), "status": "absent"}]},
+            )  # no X-CSRF-TOKEN
+
+        assert response.status_code == 401
+
+    def test_delete_without_a_csrf_header_is_rejected(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        email = f"owner-{klass['faculty_id']}@college.test"
+        faculty = make_user(email=email, password=FAKE_PASSWORD, role="faculty")
+        faculty["_id"] = klass["faculty_id"]
+        fake_db = make_fake_attendance_db(
+            users=[faculty] + students, classes=[klass], class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, email, FAKE_PASSWORD)
+
+            response = client.delete(f"/api/attendance/sessions/{session['_id']}")  # no X-CSRF-TOKEN
+
+        assert response.status_code == 401
+
+    def test_put_with_the_correct_csrf_header_is_accepted(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _update_session(
+                client, session["_id"], headers,
+                records=[{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}],
+            )
+
+        assert response.status_code == 200
+
+    def test_delete_with_the_correct_csrf_header_is_accepted(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _delete_session_request(client, session["_id"], headers)
+
+        assert response.status_code == 200
 
 
 # --- Class-scoped authorization across all three class-scoped endpoints --------

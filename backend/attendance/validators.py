@@ -25,6 +25,12 @@ MARKED_BY_VALUES = ("recognition", "faculty")
 
 DEFAULT_MARKED_BY = "faculty"
 
+# Paging bounds for the session history list. A default keeps a client that
+# asks for nothing from pulling a whole semester; the maximum keeps one that
+# asks for everything from doing it anyway.
+DEFAULT_SESSION_LIMIT = 50
+MAX_SESSION_LIMIT = 200
+
 
 def _require_enum(value, field_name, allowed):
     if value is None or value == "":
@@ -62,6 +68,18 @@ def require_marked_by(value):
     return _require_enum(value, "marked_by", MARKED_BY_VALUES)
 
 
+def _to_utc_midnight(value):
+    """Collapse a parsed datetime to the calendar day it names.
+
+    Every date this feature stores or compares is a lecture day, never a
+    moment, so the time is dropped rather than carried around and
+    accidentally compared.
+    """
+    return value.astimezone(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
 def parse_attendance_date(body, field_name="date"):
     """Parse a lecture date and normalise it to UTC midnight.
 
@@ -73,18 +91,74 @@ def parse_attendance_date(body, field_name="date"):
     happened is a typo or a mis-set clock, never a use case, and it would
     quietly skew every average and risk score computed later.
     """
-    parsed = parse_date(body, field_name)
-    normalized = parsed.astimezone(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    normalized = _to_utc_midnight(parse_date(body, field_name))
 
-    today = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    today = _to_utc_midnight(datetime.now(timezone.utc))
     if normalized > today:
         raise ValidationError(f"{field_name} cannot be in the future")
 
     return normalized
+
+
+def parse_optional_date(args, field_name):
+    """A history filter bound: the date if given, None if not.
+
+    Unlike a lecture date, a future bound is accepted. `to=2030-01-01` is a
+    harmless way of saying "up to whenever" -- it selects nothing that does
+    not exist, whereas recording attendance on a future date would invent a
+    lecture.
+    """
+    if args.get(field_name) in (None, ""):
+        return None
+
+    return _to_utc_midnight(parse_date(args, field_name))
+
+
+def _parse_bounded_int(args, field_name, *, default, minimum, maximum=None):
+    """Read a paging parameter from query-string strings.
+
+    A value above `maximum` is clamped rather than refused: asking for more
+    history than the server will send is a reasonable thing for a client to
+    do, and answering with the most it can is more useful than a 400. A
+    value below `minimum`, or one that is not a number at all, is a
+    malformed request and says so.
+    """
+    raw = args.get(field_name)
+    if raw in (None, ""):
+        return default
+
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{field_name} must be a whole number") from exc
+
+    if value < minimum:
+        raise ValidationError(f"{field_name} must be {minimum} or greater")
+
+    return min(value, maximum) if maximum is not None else value
+
+
+def parse_session_filters(args):
+    """Validate the query string of the session history list.
+
+    Returns the four values the service needs. `from`/`to` are inclusive
+    bounds on the lecture date; either may be omitted.
+    """
+    date_from = parse_optional_date(args, "from")
+    date_to = parse_optional_date(args, "to")
+
+    if date_from is not None and date_to is not None and date_to < date_from:
+        raise ValidationError("to cannot be earlier than from")
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "limit": _parse_bounded_int(
+            args, "limit", default=DEFAULT_SESSION_LIMIT, minimum=1,
+            maximum=MAX_SESSION_LIMIT,
+        ),
+        "skip": _parse_bounded_int(args, "skip", default=0, minimum=0),
+    }
 
 
 def require_replace_flag(value):
@@ -100,27 +174,33 @@ def require_replace_flag(value):
     return value
 
 
-def require_records(records, roster_ids):
-    """Validate a reviewed present/absent list against the class roster.
+def require_records(records, expected_ids, *, scope="this class"):
+    """Validate a present/absent list against the students it must cover.
 
-    The list must account for the roster exactly: every enrolled student
-    once, nobody twice, and nobody who is not enrolled. A partial list
-    would write a session that looks complete to every later feature while
-    silently omitting people -- and since absences are stored explicitly,
-    a missing row is indistinguishable from a student who was never
-    considered.
+    The list must account for those students exactly: every one of them
+    once, nobody twice, and nobody else. A partial list would write a
+    session that looks complete to every later feature while silently
+    omitting people -- and since absences are stored explicitly, a missing
+    row is indistinguishable from a student who was never considered.
 
-    `roster_ids` is the enrolled students' ObjectIds in roster order.
-    Returns the normalised records in that same order rather than payload
-    order, so the stored rows do not depend on how the client happened to
-    sort them.
+    `expected_ids` is those students' ObjectIds, in the order the stored
+    rows should end up in. Returns the normalised records in that same
+    order rather than payload order, so what is stored does not depend on
+    how the client happened to sort it.
+
+    Two callers, one rule. Capturing a session validates against the class
+    roster; correcting a saved one validates against the students already
+    in that session, which is not the same set once somebody has been
+    enrolled or unenrolled since. `scope` only names which of the two is
+    being enforced, so the error message tells the caller what it actually
+    compared against.
     """
     if not isinstance(records, list):
         raise ValidationError("records must be a list")
     if not records:
         raise ValidationError("records is required")
 
-    enrolled = set(roster_ids)
+    expected = set(expected_ids)
     by_student = {}
     for entry in records:
         if not isinstance(entry, dict):
@@ -129,9 +209,9 @@ def require_records(records, roster_ids):
         student_id = parse_object_id(entry.get("student_id"), "student_id")
         if student_id in by_student:
             raise ValidationError("records contains the same student more than once")
-        if student_id not in enrolled:
+        if student_id not in expected:
             raise ValidationError(
-                "records contains a student who is not enrolled in this class"
+                f"records contains a student who is not part of {scope}"
             )
 
         by_student[student_id] = {
@@ -140,12 +220,12 @@ def require_records(records, roster_ids):
             "marked_by": require_marked_by(entry.get("marked_by")),
         }
 
-    missing = len(enrolled) - len(by_student)
+    missing = len(expected) - len(by_student)
     if missing:
         raise ValidationError(
-            f"records is missing {missing} enrolled student"
-            f"{'' if missing == 1 else 's'}; every student on the roster needs "
-            "a present or absent entry"
+            f"records is missing {missing} student"
+            f"{'' if missing == 1 else 's'} from {scope}; every one of them "
+            "needs a present or absent entry"
         )
 
-    return [by_student[student_id] for student_id in roster_ids]
+    return [by_student[student_id] for student_id in expected_ids]

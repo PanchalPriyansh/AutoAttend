@@ -7,48 +7,9 @@ import {
   saveAttendance,
 } from '../../api/attendance'
 import ClassroomCapture from '../../components/faculty/ClassroomCapture'
+import StudentStatusRow from '../../components/faculty/StudentStatusRow'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
-
-/**
- * Today as the faculty member's own calendar day, not the UTC one. Building
- * it from toISOString() would show yesterday's date to anyone east of
- * Greenwich for the first hours of their morning.
- */
-function today() {
-  const now = new Date()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
-}
-
-function describeClass(item) {
-  return [item.course, item.name].filter(Boolean).join(' — ')
-}
-
-/**
- * One reviewable student. The status shown is always the working value, so a
- * flipped row reads back what the faculty member just chose rather than what
- * recognition proposed.
- */
-function StudentRow({ student, detail, status, disabled, onToggle }) {
-  const present = status === 'present'
-
-  return (
-    <li className={student.is_active ? undefined : 'is-inactive'}>
-      <span className="user-identity">
-        <span className="user-name">{student.name}</span>
-        <span className="hierarchy-hint">
-          {student.email}
-          {!student.is_active && ' · Deactivated'}
-          {detail && ` · ${detail}`}
-        </span>
-      </span>
-      <button type="button" onClick={() => onToggle(student.id)} disabled={disabled}>
-        {present ? 'Present' : 'Absent'} — mark {present ? 'absent' : 'present'}
-      </button>
-    </li>
-  )
-}
+import { describeClass, today } from '../../utils/lecture'
 
 function AttendanceCapture() {
   const [classes, setClasses] = useState([])
@@ -223,6 +184,8 @@ function AttendanceCapture() {
       <h1>Take Attendance</h1>
       <p>
         <Link to="/faculty">← Back to Faculty Dashboard</Link>
+        {' · '}
+        <Link to="/faculty/attendance/history">View attendance history</Link>
       </p>
       <p className="hierarchy-hint">
         Capture the room, then review what was recognised before saving. Face recognition
@@ -340,7 +303,7 @@ function AttendanceCapture() {
             )}
             <ul className="hierarchy-items">
               {proposal.recognized.map((row) => (
-                <StudentRow
+                <StudentStatusRow
                   key={row.student.id}
                   student={row.student}
                   detail={
@@ -367,7 +330,7 @@ function AttendanceCapture() {
             </p>
             <ul className="hierarchy-items">
               {proposal.unrecognized.map((row) => (
-                <StudentRow
+                <StudentStatusRow
                   key={row.student.id}
                   student={row.student}
                   detail={`${row.sample_count} registered sample${
@@ -395,7 +358,7 @@ function AttendanceCapture() {
               </p>
               <ul className="hierarchy-items">
                 {proposal.not_enrolled.map((row) => (
-                  <StudentRow
+                  <StudentStatusRow
                     key={row.student.id}
                     student={row.student}
                     detail="Not enrolled for recognition"

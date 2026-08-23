@@ -2,8 +2,9 @@
 
 Spec contract under test (.claude/specs/02-database-setup.md, "Database
 changes" + "Definition of done", extended by
-.claude/specs/06-face-enrollment.md and
-.claude/specs/07-attendance-capture.md):
+.claude/specs/06-face-enrollment.md,
+.claude/specs/07-attendance-capture.md, and
+.claude/specs/08-faculty-attendance-history.md):
   - Exactly ten collections are declared: users, institutes, departments,
     semesters, courses, classes, class_enrollments, face_encodings,
     attendance_sessions, and attendance_records -- no ML- or
@@ -270,6 +271,37 @@ class TestFaceEncodingsValidatorSpecificContract:
                 f"'{forbidden}' would persist biometric source material; only "
                 "the derived encoding may be stored."
             )
+
+
+class TestAttendanceSessionsValidatorSpecificContract:
+    """Per .claude/specs/08-faculty-attendance-history.md, `updated_by`
+    records who last corrected a session. It must be a real field a
+    correction can populate, and it must stay optional: every session
+    07-attendance-capture.md ever wrote has no such field, and the
+    validator must not start rejecting them the moment 08's `collMod`
+    (database/init_db.py) re-applies it.
+
+    This only proves the declared shape is right -- that a document
+    missing an optional $jsonSchema property still satisfies "strict"
+    validation is MongoDB's own documented behavior for an omitted,
+    non-required property, exercised manually against a live cluster per
+    this feature's scope note, the same boundary test_init_db.py draws
+    around create_index's server-side dedup.
+    """
+
+    def test_updated_by_exists_and_is_typed_as_an_object_id(self):
+        properties = schema.ATTENDANCE_SESSIONS_VALIDATOR["$jsonSchema"]["properties"]
+
+        assert properties["updated_by"]["bsonType"] == "objectId"
+
+    def test_updated_by_is_not_required(self):
+        """Redundant with test_required_fields_match_the_spec above, kept
+        here as a standalone, locally-obvious guarantee: this is the one
+        field in the collection a document is allowed to be missing.
+        """
+        required = schema.ATTENDANCE_SESSIONS_VALIDATOR["$jsonSchema"]["required"]
+
+        assert "updated_by" not in required
 
 
 class TestIndexDefinitionsPerCollection:

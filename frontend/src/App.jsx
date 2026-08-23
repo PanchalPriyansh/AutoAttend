@@ -6,6 +6,7 @@ import UserManagement from './routes/admin/UserManagement'
 import FaceEnrollment from './routes/admin/FaceEnrollment'
 import FacultyDashboard from './routes/FacultyDashboard'
 import AttendanceCapture from './routes/faculty/AttendanceCapture'
+import AttendanceHistory from './routes/faculty/AttendanceHistory'
 import StudentDashboard from './routes/StudentDashboard'
 import NotFound from './routes/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -60,6 +61,14 @@ function App() {
         element={
           <ProtectedRoute role="faculty">
             <AttendanceCapture />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/faculty/attendance/history"
+        element={
+          <ProtectedRoute role="faculty">
+            <AttendanceHistory />
           </ProtectedRoute>
         }
       />

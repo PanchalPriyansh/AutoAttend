@@ -21,6 +21,17 @@ function FacultyDashboard() {
             </span>
           </span>
         </li>
+        <li>
+          <span className="user-identity">
+            <span className="user-name">
+              <Link to="/faculty/attendance/history">Attendance History</Link>
+            </span>
+            <span className="hierarchy-hint">
+              Review what has been recorded for your classes, correct a lecture that was
+              marked wrongly, or delete one that should not have been saved.
+            </span>
+          </span>
+        </li>
       </ul>
 
       <button onClick={logout}>Logout</button>
