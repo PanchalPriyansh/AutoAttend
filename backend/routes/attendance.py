@@ -27,15 +27,21 @@ from attendance.serializers import (
     serialize_assigned_classes,
     serialize_proposal,
     serialize_session,
+    serialize_session_summaries,
 )
 from attendance.service import (
+    delete_session,
     get_session,
+    get_session_by_id,
     list_assigned_classes,
+    list_sessions,
     recognize,
     save_session,
+    update_session_records,
 )
 from attendance.validators import (
     parse_attendance_date,
+    parse_session_filters,
     require_replace_flag,
     require_session_source,
 )
@@ -188,3 +194,69 @@ def create_attendance_session():
         replace=require_replace_flag(body.get("replace")),
     )
     return jsonify(serialize_session(session, records)), 201 if created else 200
+
+
+# --- History ----------------------------------------------------------
+#
+# Addressed by id, unlike the singular /attendance/session above, which
+# answers "has this lecture been taken yet?" by class and date during
+# capture. Both are kept: they are looked up by different things.
+
+
+@attendance_bp.route("/attendance/sessions", methods=["GET"])
+@role_required("faculty")
+def list_attendance_sessions():
+    filters = parse_session_filters(request.args.to_dict())
+
+    entries, total = list_sessions(
+        get_db(),
+        parse_object_id(request.args.get("class_id"), "class_id"),
+        _acting_user_id(),
+        **filters,
+    )
+    return (
+        jsonify(
+            {
+                "sessions": serialize_session_summaries(entries),
+                # The unpaged count, so the screen can say what it is showing
+                # a page of. limit is echoed because it may have been clamped.
+                "total": total,
+                "limit": filters["limit"],
+                "skip": filters["skip"],
+            }
+        ),
+        200,
+    )
+
+
+@attendance_bp.route("/attendance/sessions/<session_id>", methods=["GET"])
+@role_required("faculty")
+def get_attendance_session_by_id(session_id):
+    session, records = get_session_by_id(
+        get_db(), parse_object_id(session_id, "id"), _acting_user_id()
+    )
+    return jsonify(serialize_session(session, records)), 200
+
+
+@attendance_bp.route("/attendance/sessions/<session_id>", methods=["PUT"])
+@role_required("faculty")
+def update_attendance_session(session_id):
+    # Only `records` is read. A class_id, date, source, or taken_by sent
+    # alongside it is ignored rather than rejected -- those are properties of
+    # the lecture, and correcting who was present does not change any of them.
+    body = json_body()
+
+    session, records = update_session_records(
+        get_db(),
+        parse_object_id(session_id, "id"),
+        _acting_user_id(),
+        body.get("records"),
+    )
+    return jsonify(serialize_session(session, records)), 200
+
+
+@attendance_bp.route("/attendance/sessions/<session_id>", methods=["DELETE"])
+@role_required("faculty")
+def delete_attendance_session(session_id):
+    delete_session(get_db(), parse_object_id(session_id, "id"), _acting_user_id())
+    return jsonify({"deleted": True}), 200

@@ -29,8 +29,10 @@ def _field_matches(value, condition):
     """A single query-field comparison, either plain equality or one of
     the small set of operators the test suite needs: `$in` (student-id
     lookup for a roster), `$ne` (06-face-enrollment.md's cross-student
-    duplicate-face scan, "every *other* student's encodings"), and
-    `$regex`/`$options` (the `q=` name/email search).
+    duplicate-face scan, "every *other* student's encodings"),
+    `$regex`/`$options` (the `q=` name/email search), and
+    `$gte`/`$lte`/`$gt`/`$lt` (08-faculty-attendance-history.md's
+    inclusive `from`/`to` date-range filter on `list_sessions`).
     """
     if isinstance(condition, dict):
         if "$in" in condition:
@@ -40,6 +42,18 @@ def _field_matches(value, condition):
         if "$regex" in condition:
             flags = re.IGNORECASE if condition.get("$options") == "i" else 0
             return bool(re.search(condition["$regex"], value or "", flags))
+        if any(op in condition for op in ("$gte", "$lte", "$gt", "$lt")):
+            if value is None:
+                return False
+            if "$gte" in condition and not value >= condition["$gte"]:
+                return False
+            if "$lte" in condition and not value <= condition["$lte"]:
+                return False
+            if "$gt" in condition and not value > condition["$gt"]:
+                return False
+            if "$lt" in condition and not value < condition["$lt"]:
+                return False
+            return True
         return False
     return value == condition
 

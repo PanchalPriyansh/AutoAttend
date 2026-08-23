@@ -1,5 +1,5 @@
-"""Shared, in-memory fakes for attendance-capture tests
-(07-attendance-capture.md).
+"""Shared, in-memory fakes for attendance-capture and attendance-history
+tests (07-attendance-capture.md, 08-faculty-attendance-history.md).
 
 `attendance/service.py` reads/writes eight collections (`users`,
 `institutes`, `departments`, `semesters`, `courses`, `classes`,
@@ -15,6 +15,14 @@ collection this feature touches, built on `auth_test_helpers._matches`
 (already extended with `$in`/`$ne`/`$regex`/`$or`/`$and` support) so it
 mirrors real MongoDB query semantics for exactly the operators this
 feature's service layer issues.
+
+08-faculty-attendance-history.md added two more query shapes: `list_sessions`
+sorts/pages a `find(...)` cursor (`.sort(...).skip(...).limit(...)`), and
+`_session_counts` group-counts `attendance_records` with a single
+`aggregate(...)` call. `FakeCursor.sort`/`.skip`/`.limit` and
+`FakeCollection.aggregate` below support exactly those two shapes -- not a
+general aggregation engine, mirroring how narrowly the rest of this file is
+already scoped.
 
 Not a test module itself (no `test_` prefix), so pytest does not collect
 it. No real credentials, institutional data, or biometric data are used
@@ -93,9 +101,10 @@ def _apply_projection(document, projection):
 
 
 class FakeCursor:
-    """Stands in for a pymongo `Cursor`. Nothing in attendance/service.py
-    calls `.sort(...)` on any of these collections, so only iteration and
-    `list(...)` need supporting.
+    """Stands in for a pymongo `Cursor`. `sort`/`skip`/`limit` are
+    chainable, mirroring the real cursor API, and only need to support the
+    one shape `list_sessions` issues: a single-key sort followed by
+    `skip`/`limit` paging.
     """
 
     def __init__(self, docs):
@@ -106,6 +115,25 @@ class FakeCursor:
 
     def __len__(self):
         return len(self._docs)
+
+    def sort(self, keys):
+        """`keys` is pymongo's list-of-`(field, direction)` form, e.g.
+        `[("date", -1)]`. Applied least-significant-key-first with a
+        stable sort so multiple keys compose correctly, even though
+        `list_sessions` only ever passes one.
+        """
+        for field, direction in reversed(keys):
+            self._docs.sort(key=lambda d: d.get(field), reverse=(direction == -1))
+        return self
+
+    def skip(self, count):
+        self._docs = self._docs[count:]
+        return self
+
+    def limit(self, count):
+        if count:
+            self._docs = self._docs[:count]
+        return self
 
 
 class FakeCollection:
@@ -200,6 +228,33 @@ class FakeCollection:
                 remaining.append(document)
         self._docs = remaining
         return _DeleteResult(deleted)
+
+    def aggregate(self, pipeline):
+        """A narrow stand-in for pymongo's `aggregate` -- handles exactly
+        the pipeline shape `attendance/service.py::_session_counts` issues
+        over `attendance_records`: a `$match` on
+        `session_id: {"$in": [...]}` followed by a `$group` by
+        `session_id` computing `total` (a count) and `present` (a
+        conditional sum on `status == "present"`).
+
+        Not a general aggregation engine -- any other pipeline shape is a
+        signal this fake needs to grow deliberately, not a bug to silently
+        paper over, so it is not attempted here.
+        """
+        match_stage = pipeline[0]["$match"]
+        matched = [d for d in self._docs if _matches(d, match_stage)]
+
+        groups = {}
+        for document in matched:
+            bucket = groups.setdefault(document["session_id"], {"total": 0, "present": 0})
+            bucket["total"] += 1
+            if document.get("status") == "present":
+                bucket["present"] += 1
+
+        return [
+            {"_id": session_id, "total": bucket["total"], "present": bucket["present"]}
+            for session_id, bucket in groups.items()
+        ]
 
 
 def make_fake_attendance_db(
@@ -321,6 +376,42 @@ def make_attendance_record(
     return document
 
 
+def make_session_with_records(
+    class_id,
+    students,
+    *,
+    statuses=None,
+    marked_by=None,
+    taken_by=None,
+    date=None,
+    source="photo",
+    created_at=None,
+    updated_at=None,
+    **session_overrides,
+):
+    """A saved session plus one record per student in `students`, wired
+    together the way `save_session` would have left them (same
+    `session_id`, `class_id` denormalised onto every record).
+
+    `statuses`/`marked_by` default every student to `"present"` /
+    `"recognition"` and can be overridden per test with a same-length
+    list, in `students` order. Returns `(session, records)`.
+    """
+    session = make_attendance_session(
+        class_id, date=date, source=source, taken_by=taken_by,
+        created_at=created_at, updated_at=updated_at, **session_overrides,
+    )
+    statuses = statuses if statuses is not None else ["present"] * len(students)
+    marked_by_values = marked_by if marked_by is not None else ["recognition"] * len(students)
+    records = [
+        make_attendance_record(
+            session["_id"], class_id, student["_id"], status=status, marked_by=mb,
+        )
+        for student, status, mb in zip(students, statuses, marked_by_values)
+    ]
+    return session, records
+
+
 def build_owned_class_with_roster(faculty_id, *, student_count=2, course_id=None):
     """A class assigned to `faculty_id` with `student_count` enrolled
     students and no face samples yet -- the common starting point most
@@ -380,6 +471,7 @@ __all__ = [
     "make_face_encoding",
     "make_attendance_session",
     "make_attendance_record",
+    "make_session_with_records",
     "build_owned_class_with_roster",
     "synthetic_encoding",
     "fake_distance",

@@ -61,3 +61,43 @@ export function saveAttendance({ classId, date, source, records, replace = false
     }),
   })
 }
+
+/**
+ * One page of the attendance recorded for a class, newest lecture first.
+ *
+ * `from`/`to` are optional inclusive YYYY-MM-DD bounds. Resolves to the whole
+ * body — `{ sessions, total, limit, skip }` — rather than just the array,
+ * because the screen needs the unpaged total to page through it and the
+ * echoed limit to know whether the one it asked for was clamped.
+ */
+export function listAttendanceSessions(classId, { from, to, limit, skip } = {}) {
+  const query = new URLSearchParams({ class_id: classId })
+  if (from) query.set('from', from)
+  if (to) query.set('to', to)
+  if (limit != null) query.set('limit', String(limit))
+  if (skip) query.set('skip', String(skip))
+
+  return request(`/api/attendance/sessions?${query}`)
+}
+
+export function getAttendanceSessionById(sessionId) {
+  return request(`/api/attendance/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+/**
+ * Correct a saved session. Only the records travel: the class, the date, who
+ * took it, and how it was captured are all properties of the lecture, and
+ * correcting who was present does not change any of them.
+ */
+export function updateAttendanceSession(sessionId, records) {
+  return request(`/api/attendance/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ records }),
+  })
+}
+
+export function deleteAttendanceSession(sessionId) {
+  return request(`/api/attendance/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  })
+}

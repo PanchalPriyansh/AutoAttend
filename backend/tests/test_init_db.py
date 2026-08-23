@@ -26,7 +26,7 @@ required, matching this project's fully-mocked test convention.
 """
 
 from database.init_db import init_database
-from database.schema import COLLECTIONS
+from database.schema import ATTENDANCE_SESSIONS, COLLECTIONS
 
 
 class FakeCollection:
@@ -239,3 +239,52 @@ class TestInitDatabaseIdempotency:
         # around is a no-op server-side, but our code still legitimately
         # calls the driver method both times).
         assert actual_total == expected_total * 2
+
+
+class TestInitDatabaseUpgradesAnExistingSevenEraDatabase:
+    """Per .claude/specs/08-faculty-attendance-history.md: a database that
+    already has `attendance_sessions` from 07-attendance-capture.md, full of
+    sessions with no `updated_by`, must upgrade cleanly -- collMod is what
+    applies 08's widened validator to a collection that already exists, and
+    that validator must still describe those old documents as valid.
+
+    A fake collMod call can't prove a real MongoDB accepts a document
+    missing an optional property (that's MongoDB's own $jsonSchema
+    behavior, exercised manually per this suite's usual live-cluster
+    boundary), but it can prove init_database hands MongoDB the validator
+    that makes that true, rather than one that was mutated or truncated
+    somewhere on the way from schema.py.
+    """
+
+    def test_collmod_for_an_existing_attendance_sessions_collection_allows_updated_by_to_be_absent(
+        self,
+    ):
+        fake_db = FakeDb(existing_collections={ATTENDANCE_SESSIONS})
+
+        init_database(fake_db)
+
+        collmod_call = next(
+            call for call in fake_db.command_calls if call["name"] == ATTENDANCE_SESSIONS
+        )
+        json_schema = collmod_call["validator"]["$jsonSchema"]
+        assert "updated_by" in json_schema["properties"]
+        assert json_schema["properties"]["updated_by"]["bsonType"] == "objectId"
+        assert "updated_by" not in json_schema["required"]
+
+    def test_a_second_init_db_run_keeps_updated_by_optional(self):
+        """The upgrade is not a one-time migration step -- every future
+        `flask init-db` run must keep re-describing old sessions as valid,
+        not just the first one after 08 ships.
+        """
+        fake_db = FakeDb(existing_collections={ATTENDANCE_SESSIONS})
+
+        init_database(fake_db)
+        init_database(fake_db)
+
+        collmod_calls = [
+            call for call in fake_db.command_calls if call["name"] == ATTENDANCE_SESSIONS
+        ]
+        assert len(collmod_calls) == 2
+        for call in collmod_calls:
+            json_schema = call["validator"]["$jsonSchema"]
+            assert "updated_by" not in json_schema["required"]

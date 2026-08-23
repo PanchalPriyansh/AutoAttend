@@ -79,6 +79,28 @@ def require_owned_class(db, class_id, faculty_id):
     return document
 
 
+def _require_owned_session(db, session_id, faculty_id):
+    """Resolve a saved session and confirm its class belongs to the caller.
+
+    Every session-scoped operation goes through here, so a session id is
+    never enough on its own to read, correct, or delete attendance.
+
+    The two failures are kept apart on purpose. A session id that does not
+    exist is a 404; one that exists under somebody else's class is a 403.
+    Collapsing the second into the first to avoid confirming the session
+    exists would be withholding a straight answer from an authenticated
+    colleague about why they cannot touch it -- the same choice
+    require_owned_class already makes for a class.
+    """
+    session = db[ATTENDANCE_SESSIONS].find_one({"_id": session_id})
+    if session is None:
+        raise NotFoundError("Attendance session not found")
+
+    require_owned_class(db, session["class_id"], faculty_id)
+
+    return session
+
+
 # --- Assigned classes -------------------------------------------------
 
 
@@ -447,3 +469,166 @@ def save_session(db, class_id, date, faculty_id, *, source, records, replace):
     pairs = _load_session_records(db, session["_id"], students_by_id)
 
     return session, pairs, created
+
+
+# --- History ----------------------------------------------------------
+
+
+def _session_counts(db, session_ids):
+    """Present/total per session, from one grouped aggregation.
+
+    Counting in the database rather than in Python is a deliberate
+    departure from _roster_counts above. That one reads a single class's
+    enrollments; this one would read every record of every session on the
+    page -- a couple of hundred lectures times a full roster -- to produce
+    one pair of numbers each. The rows are summed where they live and only
+    the totals travel.
+    """
+    if not session_ids:
+        return {}
+
+    pipeline = [
+        {"$match": {"session_id": {"$in": session_ids}}},
+        {
+            "$group": {
+                "_id": "$session_id",
+                "total": {"$sum": 1},
+                "present": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "present"]}, 1, 0]}
+                },
+            }
+        },
+    ]
+
+    return {
+        row["_id"]: {"total": row["total"], "present": row["present"]}
+        for row in db[ATTENDANCE_RECORDS].aggregate(pipeline)
+    }
+
+
+def list_sessions(db, class_id, faculty_id, *, date_from, date_to, limit, skip):
+    """One page of the attendance recorded for a class, newest lecture first.
+
+    Returns `(entries, total)`, where each entry is a (session, counts)
+    pair and `total` counts everything matching the filter regardless of
+    paging -- so the screen can say what it is showing a page of.
+
+    The query is an equality on class_id plus a range and sort on date,
+    which is the prefix shape of the existing uniq_class_id_date index; no
+    additional index is needed to serve it.
+    """
+    require_owned_class(db, class_id, faculty_id)
+
+    query = {"class_id": class_id}
+    date_range = {}
+    if date_from is not None:
+        date_range["$gte"] = date_from
+    if date_to is not None:
+        # Inclusive: both bounds are already at UTC midnight, and a session's
+        # stored date is too, so an equal value is a match rather than a
+        # lecture that falls just outside the range the user asked for.
+        date_range["$lte"] = date_to
+    if date_range:
+        query["date"] = date_range
+
+    total = db[ATTENDANCE_SESSIONS].count_documents(query)
+    sessions = list(
+        db[ATTENDANCE_SESSIONS].find(query).sort([("date", -1)]).skip(skip).limit(limit)
+    )
+
+    counts = _session_counts(db, [session["_id"] for session in sessions])
+
+    entries = [(session, counts.get(session["_id"], {})) for session in sessions]
+
+    return entries, total
+
+
+def get_session_by_id(db, session_id, faculty_id):
+    """One saved session with its records, addressed by id."""
+    session = _require_owned_session(db, session_id, faculty_id)
+
+    return session, _load_session_records(db, session_id)
+
+
+def update_session_records(db, session_id, faculty_id, records):
+    """Correct the present/absent list of a session already recorded.
+
+    Only statuses change. `class_id`, `date`, `source`, `created_at`, and
+    `taken_by` are all immutable here -- `taken_by` in particular still
+    names whoever took the lecture, because a correction does not make the
+    person making it the one who was in the room. `updated_at` and
+    `updated_by` are the only session fields this touches.
+
+    The list is validated against the students already in the session
+    rather than against today's roster. A session records who was
+    considered on the day; re-deriving that set from the current roster
+    would quietly add a student enrolled since, or demand the removal of
+    one unenrolled since, and either would rewrite history.
+    """
+    session = _require_owned_session(db, session_id, faculty_id)
+
+    stored = _load_session_records(db, session_id)
+    if not stored:
+        raise ValidationError("This session has no attendance records to correct")
+
+    normalized = require_records(
+        records,
+        [record["student_id"] for record, _ in stored],
+        scope="this session",
+    )
+
+    now = _now()
+    # Updated in place rather than deleted and reinserted: each record keeps
+    # the created_at it was first written with, and a failure part-way
+    # through cannot leave the session with no records at all. The roster
+    # bounds the loop, so this is a handful of small writes.
+    for record in normalized:
+        db[ATTENDANCE_RECORDS].update_one(
+            {"session_id": session_id, "student_id": record["student_id"]},
+            {"$set": {"status": record["status"], "marked_by": record["marked_by"]}},
+        )
+
+    db[ATTENDANCE_SESSIONS].update_one(
+        {"_id": session_id},
+        {"$set": {"updated_at": now, "updated_by": faculty_id}},
+    )
+
+    logger.info(
+        "Corrected attendance for class %s on %s (%d students) by %s",
+        session["class_id"],
+        session["date"].date().isoformat(),
+        len(normalized),
+        faculty_id,
+    )
+
+    session = {**session, "updated_at": now, "updated_by": faculty_id}
+
+    return session, _load_session_records(db, session_id)
+
+
+def delete_session(db, session_id, faculty_id):
+    """Remove a session and the records belonging to it.
+
+    Records first, then the session. A failure between the two leaves a
+    session with no records -- visible and fixable -- rather than records
+    pointing at a session that no longer exists, which nothing in 09-11
+    would be able to read but everything would still count.
+
+    Nothing is soft-deleted. Unlike a user, a session is referenced only by
+    its own records, and one taken against the wrong class is not a
+    historical fact worth keeping. That is why the UI confirms first.
+    """
+    session = _require_owned_session(db, session_id, faculty_id)
+
+    deleted = db[ATTENDANCE_RECORDS].delete_many({"session_id": session_id})
+    db[ATTENDANCE_SESSIONS].delete_one({"_id": session_id})
+
+    logger.info(
+        "Deleted attendance for class %s on %s (%d records) by %s",
+        session["class_id"],
+        session["date"].date().isoformat(),
+        deleted.deleted_count,
+        faculty_id,
+    )
+
+    return deleted.deleted_count

@@ -31,6 +31,28 @@ implementation" + "Definition of done"):
   - `get_session`: 404 for an untaken date, the saved session + records
     otherwise, ownership enforced.
 
+Also covers 08-faculty-attendance-history.md's four additions to this
+module ("APIs" + "Rules for implementation" + "Definition of done"):
+  - `list_sessions`: scoped to one owned class, newest-first, `from`/`to`
+    inclusive on the lecture date, `total` unaffected by `limit`/`skip`
+    paging, an empty owned class returns `([], 0)` rather than an error,
+    and counts come from exactly one grouped aggregation regardless of how
+    many sessions are on the page.
+  - `get_session_by_id`: 404 for an unknown id, 403 for a session under
+    somebody else's class, the session plus every stored record (absences
+    explicit) otherwise.
+  - `update_session_records`: only `status`/`marked_by` change; `class_id`,
+    `date`, `source`, `created_at`, `taken_by` are untouched;
+    `updated_at`/`updated_by` are the only session fields touched, and
+    `updated_by` is exactly the `faculty_id` argument; the payload is
+    validated against the session's own stored students, not the class's
+    current roster, so enrolling/unenrolling since the lecture does not
+    change what a valid edit looks like; a malformed payload changes
+    nothing.
+  - `delete_session`: records removed before the session; unrelated
+    sessions/records for the same class are untouched; after a delete the
+    same class+date can be saved again without a stale conflict.
+
 Service-level tests call `attendance/service.py` directly against the
 `FakeCollection`-backed db from attendance_test_helpers.py -- no Flask,
 no HTTP, no live MongoDB. `recognition.encoder.closest_match` is always
@@ -39,7 +61,7 @@ is ever imported and no real biometric computation happens anywhere in
 this file.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from attendance_test_helpers import (
@@ -49,12 +71,15 @@ from attendance_test_helpers import (
     make_attendance_record,
     make_attendance_session,
     make_class,
+    make_class_enrollment,
     make_course,
     make_department,
     make_face_encoding,
     make_fake_attendance_db,
     make_institute,
     make_semester,
+    make_session_with_records,
+    make_user,
     synthetic_encoding,
 )
 from bson import ObjectId
@@ -738,3 +763,600 @@ class TestSaveSession:
             service.save_session(
                 db, klass["_id"], date, faculty_id, source="manual", records=payload, replace=False,
             )
+
+
+# --- _session_counts (08-faculty-attendance-history.md) ----------------------
+
+
+class TestSessionCounts:
+    def test_returns_empty_dict_for_no_session_ids(self):
+        db = make_fake_attendance_db()
+
+        assert service._session_counts(db, []) == {}
+
+    def test_totals_and_present_counts_are_grouped_per_session(self):
+        klass = make_class(ObjectId(), faculty_id=ObjectId())
+        students = [
+            make_user(email=f"s{i}-{ObjectId()}@college.test", role="student") for i in range(3)
+        ]
+        session_a, records_a = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present", "absent"],
+        )
+        session_b, records_b = make_session_with_records(
+            klass["_id"], students[:2], statuses=["absent", "absent"],
+        )
+        db = make_fake_attendance_db(
+            classes=[klass], users=students,
+            attendance_sessions=[session_a, session_b],
+            attendance_records=records_a + records_b,
+        )
+
+        counts = service._session_counts(db, [session_a["_id"], session_b["_id"]])
+
+        assert counts[session_a["_id"]] == {"total": 3, "present": 2}
+        assert counts[session_b["_id"]] == {"total": 2, "present": 0}
+
+    def test_a_session_id_with_no_records_is_absent_from_the_result(self):
+        db = make_fake_attendance_db()
+        lonely_id = ObjectId()
+
+        counts = service._session_counts(db, [lonely_id])
+
+        assert lonely_id not in counts
+
+
+# --- list_sessions (08-faculty-attendance-history.md) ------------------------
+
+
+class TestListSessions:
+    def test_ownership_is_enforced_for_someone_elses_class(self):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=ObjectId())
+        db = make_fake_attendance_db(classes=[klass])
+
+        with pytest.raises(ForbiddenError):
+            service.list_sessions(
+                db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+            )
+
+    def test_nonexistent_class_raises_not_found(self):
+        db = make_fake_attendance_db()
+
+        with pytest.raises(NotFoundError):
+            service.list_sessions(
+                db, ObjectId(), ObjectId(), date_from=None, date_to=None, limit=50, skip=0,
+            )
+
+    def test_an_owned_class_with_no_sessions_returns_empty_list_and_zero_total(self):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        db = make_fake_attendance_db(classes=[klass])
+
+        entries, total = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+        )
+
+        assert entries == []
+        assert total == 0
+
+    def test_sessions_are_returned_newest_first(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        oldest, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-01"))
+        middle, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-15"))
+        newest, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-31"))
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[middle, oldest, newest],
+        )
+
+        entries, total = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+        )
+
+        assert [entry[0]["_id"] for entry in entries] == [newest["_id"], middle["_id"], oldest["_id"]]
+        assert total == 3
+
+    def test_scoped_to_the_requested_class_only(self):
+        faculty_id = ObjectId()
+        klass_a, students_a, _ = build_owned_class_with_roster(faculty_id, student_count=1)
+        klass_b, students_b, _ = build_owned_class_with_roster(faculty_id, student_count=1)
+        session_a, _ = make_session_with_records(klass_a["_id"], students_a)
+        session_b, _ = make_session_with_records(klass_b["_id"], students_b)
+        db = make_fake_attendance_db(
+            classes=[klass_a, klass_b], users=students_a + students_b,
+            attendance_sessions=[session_a, session_b],
+        )
+
+        entries, total = service.list_sessions(
+            db, klass_a["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+        )
+
+        assert [entry[0]["_id"] for entry in entries] == [session_a["_id"]]
+        assert total == 1
+
+    def test_from_and_to_filter_inclusively(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        jan1, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-01"))
+        jan15, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-15"))
+        jan31, _ = make_session_with_records(klass["_id"], students, date=_iso_date("2020-01-31"))
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[jan1, jan15, jan31],
+        )
+
+        entries, total = service.list_sessions(
+            db, klass["_id"], faculty_id,
+            date_from=_iso_date("2020-01-01"), date_to=_iso_date("2020-01-15"),
+            limit=50, skip=0,
+        )
+
+        assert {entry[0]["_id"] for entry in entries} == {jan1["_id"], jan15["_id"]}
+        assert total == 2
+
+    def test_limit_and_skip_page_without_duplicating_or_dropping_and_total_stays_unpaged(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        sessions = [
+            make_session_with_records(klass["_id"], students, date=_iso_date(f"2020-01-{day:02d}"))[0]
+            for day in (1, 10, 20)
+        ]
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=sessions,
+        )
+
+        page1, total1 = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=1, skip=0,
+        )
+        page2, total2 = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=1, skip=1,
+        )
+        page3, total3 = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=1, skip=2,
+        )
+
+        newest_first = [s["_id"] for s in sorted(sessions, key=lambda s: s["date"], reverse=True)]
+        seen_ids = [entry[0]["_id"] for page in (page1, page2, page3) for entry in page]
+        assert seen_ids == newest_first
+        assert total1 == total2 == total3 == 3
+
+    def test_counts_come_from_exactly_one_aggregation_call_regardless_of_page_size(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        sessions, records = [], []
+        for day in range(1, 6):
+            session, session_records = make_session_with_records(
+                klass["_id"], students, date=_iso_date(f"2020-01-0{day}"),
+            )
+            sessions.append(session)
+            records.extend(session_records)
+
+        class _CountingRecords(FakeCollection):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.aggregate_calls = 0
+
+            def aggregate(self, pipeline):
+                self.aggregate_calls += 1
+                return super().aggregate(pipeline)
+
+        counting_records = _CountingRecords(records)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=sessions,
+        )
+        db[ATTENDANCE_RECORDS] = counting_records
+
+        entries, _ = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+        )
+
+        assert len(entries) == 5
+        assert counting_records.aggregate_calls == 1
+
+    def test_a_session_with_no_records_yet_reports_empty_counts_not_an_error(self):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        session = make_attendance_session(klass["_id"], date=_iso_date("2020-01-01"), taken_by=faculty_id)
+        db = make_fake_attendance_db(classes=[klass], attendance_sessions=[session])
+
+        entries, total = service.list_sessions(
+            db, klass["_id"], faculty_id, date_from=None, date_to=None, limit=50, skip=0,
+        )
+
+        assert entries[0][1] == {}
+        assert total == 1
+
+
+# --- get_session_by_id (08-faculty-attendance-history.md) --------------------
+
+
+class TestGetSessionById:
+    def test_nonexistent_session_raises_not_found(self):
+        db = make_fake_attendance_db()
+
+        with pytest.raises(NotFoundError):
+            service.get_session_by_id(db, ObjectId(), ObjectId())
+
+    def test_a_session_under_someone_elses_class_raises_forbidden(self):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=ObjectId())
+        session = make_attendance_session(klass["_id"], taken_by=ObjectId())
+        db = make_fake_attendance_db(classes=[klass], attendance_sessions=[session])
+
+        with pytest.raises(ForbiddenError):
+            service.get_session_by_id(db, session["_id"], faculty_id)
+
+    def test_returns_the_session_with_every_stored_record_absences_explicit(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "absent"],
+        )
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+
+        result_session, pairs = service.get_session_by_id(db, session["_id"], faculty_id)
+
+        assert result_session["_id"] == session["_id"]
+        statuses = {student["_id"]: record["status"] for record, student in pairs}
+        assert statuses == {students[0]["_id"]: "present", students[1]["_id"]: "absent"}
+
+
+# --- update_session_records (08-faculty-attendance-history.md) ---------------
+
+
+class TestUpdateSessionRecords:
+    def test_nonexistent_session_raises_not_found(self):
+        db = make_fake_attendance_db()
+
+        with pytest.raises(NotFoundError):
+            service.update_session_records(db, ObjectId(), ObjectId(), [])
+
+    def test_a_session_under_someone_elses_class_raises_forbidden(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(ObjectId(), student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"}
+        ]
+
+        with pytest.raises(ForbiddenError):
+            service.update_session_records(db, session["_id"], faculty_id, payload)
+
+    def test_flips_a_students_status(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}]
+
+        _, pairs = service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert pairs[0][0]["status"] == "absent"
+        assert db[ATTENDANCE_RECORDS].find_one({"student_id": students[0]["_id"]})["status"] == "absent"
+
+    def test_class_id_date_source_created_at_and_taken_by_are_unchanged(self):
+        faculty_id = ObjectId()
+        original_taken_by = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(
+            klass["_id"], students, source="photo", taken_by=original_taken_by,
+            date=_iso_date("2020-01-01"),
+        )
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}]
+
+        updated_session, _ = service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert updated_session["class_id"] == klass["_id"]
+        assert updated_session["date"] == session["date"]
+        assert updated_session["source"] == "photo"
+        assert updated_session["created_at"] == session["created_at"]
+        assert updated_session["taken_by"] == original_taken_by
+
+    def test_updated_at_and_updated_by_are_written_and_updated_by_matches_the_caller(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}]
+
+        service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        stored_session = db[ATTENDANCE_SESSIONS].find_one({"_id": session["_id"]})
+        assert stored_session["updated_by"] == faculty_id
+        assert stored_session["updated_at"] >= session["updated_at"]
+
+    def test_updated_by_comes_from_the_argument_never_from_the_payload(self):
+        faculty_id = ObjectId()
+        spoofed_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [
+            {
+                "student_id": str(students[0]["_id"]), "status": "absent",
+                "marked_by": "faculty", "updated_by": str(spoofed_id),
+            }
+        ]
+
+        updated_session, _ = service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert updated_session["updated_by"] == faculty_id
+        assert updated_session["updated_by"] != spoofed_id
+
+    def test_an_unchanged_records_marked_by_is_preserved_including_recognition(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present"],
+            marked_by=["recognition", "recognition"],
+        )
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [
+            # Untouched: resubmitted exactly as stored.
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+            # Changed: status flipped, so the client sends "faculty".
+            {"student_id": str(students[1]["_id"]), "status": "absent", "marked_by": "faculty"},
+        ]
+
+        service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        stored = {r["student_id"]: r for r in db[ATTENDANCE_RECORDS].find({})}
+        assert stored[students[0]["_id"]]["marked_by"] == "recognition"
+        assert stored[students[0]["_id"]]["status"] == "present"
+        assert stored[students[1]["_id"]]["marked_by"] == "faculty"
+        assert stored[students[1]["_id"]]["status"] == "absent"
+
+    def test_missing_a_session_student_returns_400_and_writes_nothing(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present", "present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        incomplete_payload = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+        ]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, incomplete_payload)
+
+        stored = list(db[ATTENDANCE_RECORDS].find({}))
+        assert all(r["status"] == "present" for r in stored)
+        assert len(stored) == 2
+
+    def test_a_duplicate_student_in_the_payload_returns_400_and_writes_nothing(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        duplicate_payload = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+            {"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"},
+        ]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, duplicate_payload)
+
+        assert db[ATTENDANCE_RECORDS].find_one({"student_id": students[0]["_id"]})["status"] == "present"
+
+    def test_a_student_not_in_the_session_returns_400_and_writes_nothing(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        stranger_payload = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+            {"student_id": str(ObjectId()), "status": "present", "marked_by": "faculty"},
+        ]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, stranger_payload)
+
+        assert len(list(db[ATTENDANCE_RECORDS].find({}))) == 1
+
+    def test_an_invalid_status_returns_400_and_writes_nothing(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "late", "marked_by": "faculty"}]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert db[ATTENDANCE_RECORDS].find_one({"student_id": students[0]["_id"]})["status"] == "present"
+
+    def test_an_invalid_marked_by_returns_400_and_writes_nothing(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "robot"}]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert db[ATTENDANCE_RECORDS].find_one({"student_id": students[0]["_id"]})["marked_by"] == "recognition"
+
+    def test_a_new_enrollment_since_the_lecture_does_not_break_an_otherwise_valid_edit(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        new_student = make_user(email=f"new-{ObjectId()}@college.test", role="student")
+        new_enrollment = make_class_enrollment(klass["_id"], new_student["_id"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students + [new_student],
+            class_enrollments=enrollments + [new_enrollment],
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [{"student_id": str(students[0]["_id"]), "status": "absent", "marked_by": "faculty"}]
+
+        _, pairs = service.update_session_records(db, session["_id"], faculty_id, payload)
+
+        assert {student["_id"] for _, student in pairs} == {students[0]["_id"]}
+
+    def test_a_new_enrollment_since_the_lecture_is_rejected_if_included_in_the_edit(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["present"])
+        new_student = make_user(email=f"new-{ObjectId()}@college.test", role="student")
+        new_enrollment = make_class_enrollment(klass["_id"], new_student["_id"])
+        db = make_fake_attendance_db(
+            classes=[klass], users=students + [new_student],
+            class_enrollments=enrollments + [new_enrollment],
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+            {"student_id": str(new_student["_id"]), "status": "present", "marked_by": "faculty"},
+        ]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, payload)
+
+    def test_a_student_unenrolled_since_the_lecture_must_still_be_covered_by_the_edit(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "present"],
+        )
+        # students[1] has since been unenrolled, but was part of the
+        # session, so a valid edit must still cover them.
+        db = make_fake_attendance_db(
+            classes=[klass], users=students,
+            class_enrollments=[enrollments[0]],
+            attendance_sessions=[session], attendance_records=records,
+        )
+        payload_missing_unenrolled = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+        ]
+
+        with pytest.raises(ValidationError):
+            service.update_session_records(db, session["_id"], faculty_id, payload_missing_unenrolled)
+
+        payload_including_unenrolled = [
+            {"student_id": str(students[0]["_id"]), "status": "present", "marked_by": "recognition"},
+            {"student_id": str(students[1]["_id"]), "status": "absent", "marked_by": "faculty"},
+        ]
+
+        _, pairs = service.update_session_records(
+            db, session["_id"], faculty_id, payload_including_unenrolled,
+        )
+
+        assert {student["_id"] for _, student in pairs} == {students[0]["_id"], students[1]["_id"]}
+
+
+# --- delete_session (08-faculty-attendance-history.md) -----------------------
+
+
+class TestDeleteSession:
+    def test_nonexistent_session_raises_not_found(self):
+        db = make_fake_attendance_db()
+
+        with pytest.raises(NotFoundError):
+            service.delete_session(db, ObjectId(), ObjectId())
+
+    def test_a_session_under_someone_elses_class_raises_forbidden(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(ObjectId(), student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+
+        with pytest.raises(ForbiddenError):
+            service.delete_session(db, session["_id"], faculty_id)
+
+    def test_removes_the_session_and_all_of_its_records(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(klass["_id"], students)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+
+        deleted_count = service.delete_session(db, session["_id"], faculty_id)
+
+        assert deleted_count == 2
+        assert db[ATTENDANCE_SESSIONS].find_one({"_id": session["_id"]}) is None
+        assert list(db[ATTENDANCE_RECORDS].find({"session_id": session["_id"]})) == []
+
+    def test_deleting_one_session_leaves_other_sessions_of_the_same_class_untouched(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session_a, records_a = make_session_with_records(
+            klass["_id"], students, date=_iso_date("2020-01-01"),
+        )
+        session_b, records_b = make_session_with_records(
+            klass["_id"], students, date=_iso_date("2020-01-02"),
+        )
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session_a, session_b], attendance_records=records_a + records_b,
+        )
+
+        service.delete_session(db, session_a["_id"], faculty_id)
+
+        assert db[ATTENDANCE_SESSIONS].find_one({"_id": session_b["_id"]}) is not None
+        assert len(list(db[ATTENDANCE_RECORDS].find({"session_id": session_b["_id"]}))) == 1
+
+    def test_after_a_delete_the_same_class_and_date_can_be_recorded_again(self):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        date = _iso_date("2020-01-01")
+        session, records = make_session_with_records(klass["_id"], students, date=date)
+        db = make_fake_attendance_db(
+            classes=[klass], users=students, class_enrollments=enrollments,
+            attendance_sessions=[session], attendance_records=records,
+        )
+
+        service.delete_session(db, session["_id"], faculty_id)
+
+        payload = [{"student_id": str(students[0]["_id"]), "status": "present"}]
+        new_session, _, created = service.save_session(
+            db, klass["_id"], date, faculty_id, source="manual", records=payload, replace=False,
+        )
+
+        assert created is True
+        assert new_session["_id"] != session["_id"]

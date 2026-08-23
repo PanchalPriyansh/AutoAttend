@@ -12,6 +12,21 @@ implementation" + "Definition of done"):
     student exactly once, no duplicates, no student who is not enrolled --
     a partial or contaminated list is a 400, never a partial write.
 
+Also covers 08-faculty-attendance-history.md's additions to this module
+("Backend" + "Rules for implementation" + "Definition of done"):
+  - `parse_optional_date`: `None` when the filter is omitted, otherwise a
+    UTC-midnight `datetime`; unlike `parse_attendance_date`, a future bound
+    is accepted (`to=2030-01-01` selects nothing that exists yet, it does
+    not invent a lecture).
+  - `parse_session_filters`: bundles `from`/`to`/`limit`/`skip`; a `to`
+    earlier than `from` is rejected; `limit` defaults to 50 and clamps
+    (never rejects) above 200; `skip` defaults to 0; a non-integer or
+    negative `limit`/`skip` is rejected.
+  - `require_records(..., scope=...)` is one roster-completeness rule with
+    two callers: the "stranger" error message names whichever `scope` is
+    passed in ("this class" for capture, "this session" for a correction),
+    so the two callers cannot silently drift onto different rules.
+
 Pure unit tests -- no Flask, no database, no CV library involved.
 """
 
@@ -22,7 +37,11 @@ from bson import ObjectId
 
 from attendance.validators import (
     DEFAULT_MARKED_BY,
+    DEFAULT_SESSION_LIMIT,
+    MAX_SESSION_LIMIT,
     parse_attendance_date,
+    parse_optional_date,
+    parse_session_filters,
     require_marked_by,
     require_records,
     require_replace_flag,
@@ -220,3 +239,143 @@ class TestRequireRecords:
 
         with pytest.raises(ValidationError):
             require_records(records, [ObjectId()])
+
+    # -- scope (08-faculty-attendance-history.md) ---------------------------
+
+    def test_scope_defaults_to_this_class(self):
+        roster_student, stranger = ObjectId(), ObjectId()
+        records = [
+            {"student_id": str(roster_student), "status": "present"},
+            {"student_id": str(stranger), "status": "present"},
+        ]
+
+        with pytest.raises(ValidationError, match="this class"):
+            require_records(records, [roster_student])
+
+    def test_scope_this_session_names_the_session_in_the_stranger_message(self):
+        session_student, stranger = ObjectId(), ObjectId()
+        records = [
+            {"student_id": str(session_student), "status": "present"},
+            {"student_id": str(stranger), "status": "present"},
+        ]
+
+        with pytest.raises(ValidationError, match="this session"):
+            require_records(records, [session_student], scope="this session")
+
+    def test_scope_this_session_names_the_session_in_the_missing_message(self):
+        first, second = ObjectId(), ObjectId()
+        records = [{"student_id": str(first), "status": "present"}]
+
+        with pytest.raises(ValidationError, match="this session"):
+            require_records(records, [first, second], scope="this session")
+
+    def test_a_complete_session_roster_is_accepted_regardless_of_scope_label(self):
+        student_a, student_b = ObjectId(), ObjectId()
+        records = [
+            {"student_id": str(student_a), "status": "present"},
+            {"student_id": str(student_b), "status": "absent"},
+        ]
+
+        normalized = require_records(records, [student_a, student_b], scope="this session")
+
+        assert [entry["student_id"] for entry in normalized] == [student_a, student_b]
+
+
+# --- parse_optional_date (08-faculty-attendance-history.md) ------------------
+
+
+class TestParseOptionalDate:
+    def test_returns_none_when_the_field_is_absent(self):
+        assert parse_optional_date({}, "from") is None
+
+    def test_returns_none_when_the_field_is_an_empty_string(self):
+        assert parse_optional_date({"from": ""}, "from") is None
+
+    def test_a_valid_date_is_normalized_to_utc_midnight(self):
+        parsed = parse_optional_date({"from": "2020-06-01"}, "from")
+
+        assert parsed == datetime(2020, 6, 1, tzinfo=timezone.utc)
+
+    def test_a_future_date_is_accepted_unlike_parse_attendance_date(self):
+        future = (datetime.now(timezone.utc) + timedelta(days=3650)).date().isoformat()
+
+        parsed = parse_optional_date({"to": future}, "to")
+
+        assert parsed.date().isoformat() == future
+
+    def test_a_malformed_date_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_optional_date({"from": "not-a-date"}, "from")
+
+    def test_reads_the_named_field_only(self):
+        assert parse_optional_date({"to": "2020-01-01"}, "from") is None
+
+
+# --- parse_session_filters (08-faculty-attendance-history.md) ----------------
+
+
+class TestParseSessionFilters:
+    def test_defaults_when_nothing_is_supplied(self):
+        filters = parse_session_filters({})
+
+        assert filters == {
+            "date_from": None,
+            "date_to": None,
+            "limit": DEFAULT_SESSION_LIMIT,
+            "skip": 0,
+        }
+
+    def test_from_and_to_are_normalized_to_utc_midnight(self):
+        filters = parse_session_filters({"from": "2020-01-01", "to": "2020-01-31"})
+
+        assert filters["date_from"] == datetime(2020, 1, 1, tzinfo=timezone.utc)
+        assert filters["date_to"] == datetime(2020, 1, 31, tzinfo=timezone.utc)
+
+    def test_to_equal_to_from_is_accepted_a_single_day_range(self):
+        filters = parse_session_filters({"from": "2020-01-01", "to": "2020-01-01"})
+
+        assert filters["date_from"] == filters["date_to"]
+
+    def test_to_earlier_than_from_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_session_filters({"from": "2020-02-01", "to": "2020-01-01"})
+
+    def test_a_malformed_from_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_session_filters({"from": "not-a-date"})
+
+    def test_a_malformed_to_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_session_filters({"to": "not-a-date"})
+
+    def test_limit_defaults_to_50(self):
+        assert parse_session_filters({})["limit"] == 50 == DEFAULT_SESSION_LIMIT
+
+    def test_limit_above_the_maximum_is_clamped_not_rejected(self):
+        filters = parse_session_filters({"limit": "5000"})
+
+        assert filters["limit"] == MAX_SESSION_LIMIT == 200
+
+    def test_limit_at_the_maximum_is_accepted_unclamped(self):
+        filters = parse_session_filters({"limit": str(MAX_SESSION_LIMIT)})
+
+        assert filters["limit"] == MAX_SESSION_LIMIT
+
+    @pytest.mark.parametrize("value", ["0", "-1", "not-a-number", "1.5"])
+    def test_an_invalid_limit_is_rejected(self, value):
+        with pytest.raises(ValidationError):
+            parse_session_filters({"limit": value})
+
+    def test_skip_defaults_to_zero(self):
+        assert parse_session_filters({})["skip"] == 0
+
+    def test_skip_zero_is_accepted(self):
+        assert parse_session_filters({"skip": "0"})["skip"] == 0
+
+    @pytest.mark.parametrize("value", ["-1", "not-a-number", "1.5"])
+    def test_an_invalid_skip_is_rejected(self, value):
+        with pytest.raises(ValidationError):
+            parse_session_filters({"skip": value})
+
+    def test_a_large_skip_is_accepted_unclamped(self):
+        assert parse_session_filters({"skip": "10000"})["skip"] == 10000

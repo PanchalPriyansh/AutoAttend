@@ -11,6 +11,8 @@ anything but the matched student, and nothing derived from the captured
 image or video beyond the counts the reviewer needs.
 """
 
+from datetime import timezone
+
 from common.serializers import student_summary, to_json_value
 
 # The stored `date` is a timestamp at UTC midnight, but it means a
@@ -22,6 +24,60 @@ DATE_FORMAT = "%Y-%m-%d"
 
 def _serialize_date(value):
     return value.strftime(DATE_FORMAT) if value is not None else None
+
+
+def _as_utc(value):
+    """Make a stored timestamp comparable to a freshly built one.
+
+    pymongo hands back naive UTC datetimes, while anything the service layer
+    has just written carries a timezone. Comparing the two directly raises,
+    so both are put on the same footing first -- the same reattachment
+    to_json_value performs, for the same reason.
+    """
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _is_edited(session):
+    """Whether this session's stored content changed after it was recorded.
+
+    Derived rather than stored: a flag written alongside the change is a
+    second source of truth that drifts the first time anything updates one
+    and not the other.
+
+    Read from the timestamps rather than from `updated_by` so a capture
+    replaced through `POST /api/attendance` counts too. `updated_by` answers
+    a narrower question -- who last corrected it through the history screen
+    -- and stays null for a replace, which re-takes the lecture rather than
+    correcting it.
+    """
+    created_at = session.get("created_at")
+    updated_at = session.get("updated_at")
+    if created_at is None or updated_at is None:
+        return False
+
+    return _as_utc(updated_at) > _as_utc(created_at)
+
+
+def _session_header(session):
+    """The fields every session response carries, list row or full detail.
+
+    Shared so the two shapes cannot drift into describing the same session
+    differently.
+    """
+    return {
+        "id": str(session["_id"]),
+        "class_id": to_json_value(session.get("class_id")),
+        "date": _serialize_date(session.get("date")),
+        "source": session.get("source"),
+        "taken_by": to_json_value(session.get("taken_by")),
+        "created_at": to_json_value(session.get("created_at")),
+        "updated_at": to_json_value(session.get("updated_at")),
+        # Explicitly null rather than absent on a session nobody has
+        # corrected, so a client can render "never edited" without having to
+        # tell a missing key from a missing person.
+        "updated_by": to_json_value(session.get("updated_by")),
+        "edited": _is_edited(session),
+    }
 
 
 def serialize_assigned_class(entry):
@@ -101,14 +157,35 @@ def serialize_session(session, records):
     ]
 
     return {
-        "id": str(session["_id"]),
-        "class_id": to_json_value(session.get("class_id")),
-        "date": _serialize_date(session.get("date")),
-        "source": session.get("source"),
-        "taken_by": to_json_value(session.get("taken_by")),
-        "created_at": to_json_value(session.get("created_at")),
-        "updated_at": to_json_value(session.get("updated_at")),
+        **_session_header(session),
         "present_count": sum(1 for row in serialized if row["status"] == "present"),
         "absent_count": sum(1 for row in serialized if row["status"] == "absent"),
+        "total_count": len(serialized),
         "records": serialized,
     }
+
+
+def serialize_session_summary(entry):
+    """One row of the session history list: a session and its counts, with
+    no `records` array.
+
+    `entry` is a (session_document, counts) pair from
+    attendance.service.list_sessions, where `counts` holds `present` and
+    `total` from a single grouped aggregation. The roster itself is left
+    out deliberately -- a semester of full rosters is exactly the payload
+    this list must not carry, and the detail endpoint is one click away.
+    """
+    session, counts = entry
+    total = counts.get("total", 0)
+    present = counts.get("present", 0)
+
+    return {
+        **_session_header(session),
+        "present_count": present,
+        "absent_count": total - present,
+        "total_count": total,
+    }
+
+
+def serialize_session_summaries(entries):
+    return [serialize_session_summary(entry) for entry in entries]
