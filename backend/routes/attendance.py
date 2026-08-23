@@ -6,11 +6,18 @@ serialize the result. The rules live in that module; the
 exception-to-status-code mapping lives in the blueprint error handlers
 below, so no handler needs its own try/except.
 
-Every endpoint is faculty-only, and every endpoint naming a class is
-additionally restricted to the faculty member that class is assigned to.
+Every endpoint here is single-role, and every one naming a class is
+additionally restricted to the person that class belongs to. The capture
+and history routes are faculty-only and check `classes.faculty_id`; the
+two `/attendance/me` routes are student-only and check enrollment.
 `role_required` covers the first half from the token; the second half
-needs the document and is enforced in the service, on every route rather
-than only on the one that writes. Authorization is never left to React.
+needs the document and is enforced in the service layer, on every route
+rather than only on the ones that write. Authorization is never left to
+React.
+
+No route in this module accepts a student id. The `/attendance/me` pair
+reads the caller's own identity from the verified token, so there is no
+addressable "some other student" to authorize, guess, or forget to check.
 
 Nothing in this module writes the captured image or video anywhere. The
 bytes are read, passed to the service, and dropped when the request ends.
@@ -28,6 +35,8 @@ from attendance.serializers import (
     serialize_proposal,
     serialize_session,
     serialize_session_summaries,
+    serialize_student_class_attendance,
+    serialize_student_overview,
 )
 from attendance.service import (
     delete_session,
@@ -39,8 +48,10 @@ from attendance.service import (
     save_session,
     update_session_records,
 )
+from attendance.summary import class_attendance_overview, student_class_attendance
 from attendance.validators import (
     parse_attendance_date,
+    parse_date_range,
     parse_session_filters,
     require_replace_flag,
     require_session_source,
@@ -260,3 +271,36 @@ def update_attendance_session(session_id):
 def delete_attendance_session(session_id):
     delete_session(get_db(), parse_object_id(session_id, "id"), _acting_user_id())
     return jsonify({"deleted": True}), 200
+
+
+# --- A student's own attendance ---------------------------------------
+#
+# `me` is a literal segment, not a placeholder. Both handlers take the
+# student from `_acting_user_id()` and nowhere else, so a student id in
+# the query string or body is simply never read.
+
+
+@attendance_bp.route("/attendance/me", methods=["GET"])
+@role_required("student")
+def get_my_attendance():
+    entries, overall = class_attendance_overview(get_db(), _acting_user_id())
+    return jsonify(serialize_student_overview(entries, overall)), 200
+
+
+@attendance_bp.route("/attendance/me/sessions", methods=["GET"])
+@role_required("student")
+def get_my_class_attendance():
+    document, context, counts, monthly, lectures = student_class_attendance(
+        get_db(),
+        parse_object_id(request.args.get("class_id"), "class_id"),
+        _acting_user_id(),
+        **parse_date_range(request.args.to_dict()),
+    )
+    return (
+        jsonify(
+            serialize_student_class_attendance(
+                document, context, counts, monthly, lectures
+            )
+        ),
+        200,
+    )

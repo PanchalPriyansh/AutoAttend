@@ -40,6 +40,29 @@ blueprint ("APIs" + "Rules for implementation" + "Definition of done"):
     never `409`, never `503`), and `PUT`/`DELETE` enforce CSRF the same
     way `POST /api/attendance` already does.
 
+Also covers 09-student-attendance-dashboard.md's two additions to this
+blueprint ("APIs" + "Rules for implementation" + "Definition of done"):
+  - `GET /api/attendance/me` -- one entry per enrolled class labelled with
+    its hierarchy names, plus an `overall` roll-up whose counts equal the
+    sum of the per-class counts; empty enrollment is `200` with an empty
+    `classes` list and a zeroed `overall`; an unattended class reads
+    `total_count: 0` / `percentage: null`, never `0`; a stray record for a
+    class the student is not enrolled in, or another student's record in a
+    shared class, never affects a response.
+  - `GET /api/attendance/me/sessions?class_id=...` -- the student's own
+    record newest-first with a `monthly` trend oldest-first,
+    `present_count + absent_count == total_count` everywhere it is
+    reported, an inclusive `from`/`to` filter narrowing `sessions` and
+    `monthly` together, `403` for an unenrolled class, `404` for a
+    nonexistent one, and `400` for a missing/malformed `class_id` or a
+    malformed/backwards date range.
+  - Both are `student`-only (`role_required`) and identify the caller
+    solely from the JWT: a `student_id` sent in the query string, path, or
+    a JSON body is never read, so it cannot change either response, and no
+    response on either path carries another student's id/name/email/
+    status, a roster, a class average, `marked_by`, `taken_by`,
+    `updated_by`, `source`, or a session id.
+
 `routes.auth.get_db` and `routes.attendance.get_db` are monkeypatched to
 the same in-memory fake db (attendance_test_helpers.py) so a real
 `/api/auth/login` call mints genuine JWT + CSRF cookies while the
@@ -56,10 +79,16 @@ from datetime import datetime, timedelta, timezone
 from attendance_test_helpers import (
     build_owned_class_with_roster,
     fake_closest_match,
+    make_attendance_record,
+    make_attendance_session,
     make_class,
     make_class_enrollment,
+    make_course,
+    make_department,
     make_face_encoding,
     make_fake_attendance_db,
+    make_institute,
+    make_semester,
     make_session_with_records,
     make_user,
     synthetic_encoding,
@@ -1945,3 +1974,819 @@ class TestDatabaseErrorHandling:
         assert response.status_code == 500
         assert "error" in response.get_json()
         assert "MONGODB_URI" not in response.get_data(as_text=True)
+
+
+# =============================================================================
+# A student's own attendance (09-student-attendance-dashboard.md)
+# =============================================================================
+#
+# Spec contract under test ("APIs" + "Rules for implementation" +
+# "Definition of done"):
+#   - GET /api/attendance/me and GET /api/attendance/me/sessions are
+#     student-only and identify the caller from the verified JWT alone.
+#     No student id is ever read from a path segment, query string, or
+#     JSON body -- sending one changes nothing about the response.
+#   - The overview lists one entry per enrolled class, labelled with its
+#     course/semester/department/institute names, plus an `overall`
+#     roll-up whose counts equal the sum of the per-class counts; empty
+#     enrollment is 200 with an empty list and a zeroed roll-up; an
+#     unattended class is total_count 0 / percentage null, never 0; the
+#     denominator is only the records this student has, never a class's
+#     session count; a stray record naming this student for a class they
+#     are not enrolled in, or a classmate's record in a shared class,
+#     never changes a response.
+#   - The class-detail endpoint returns this student's own record newest
+#     first with a month-by-month trend oldest first, both narrowed
+#     together by an inclusive from/to filter; present_count + absent_count
+#     equals total_count in the header, in every monthly bucket, and
+#     against len(sessions); 403 for an unenrolled class, 404 for a
+#     nonexistent one, 400 for a missing/malformed class_id or a
+#     malformed/backwards date range.
+#   - Neither response ever carries another student's id/name/email/
+#     status, a roster, a class average, marked_by, taken_by, updated_by,
+#     source, or a session id.
+#
+# `recognition.encoder`/`recognition.frames` are never imported by this
+# path; `_stub_recognition(recognition_available=False, ...)` is used only
+# to prove that unavailability, which is a 503 elsewhere in this blueprint,
+# has no effect here.
+
+
+def _build_class_with_hierarchy(
+    *,
+    class_name="A",
+    course_name="Data Structures",
+    semester_name="Semester 3",
+    department_name="Computer Engineering",
+    institute_name="Test Institute",
+    faculty_id=None,
+):
+    """A class plus the four-level chain above it, in the shape
+    `make_fake_attendance_db(**hierarchy)` expects -- so a test can label a
+    class the way `class_hierarchy_context` would and assert on the names
+    the student actually sees.
+    """
+    institute = make_institute(name=institute_name)
+    department = make_department(institute["_id"], name=department_name)
+    semester = make_semester(department["_id"], name=semester_name)
+    course = make_course(semester["_id"], name=course_name)
+    klass = make_class(course["_id"], name=class_name, faculty_id=faculty_id)
+    hierarchy = {
+        "institutes": [institute],
+        "departments": [department],
+        "semesters": [semester],
+        "courses": [course],
+    }
+    return klass, hierarchy
+
+
+def _merge_hierarchies(*hierarchies):
+    merged = {"institutes": [], "departments": [], "semesters": [], "courses": []}
+    for hierarchy in hierarchies:
+        for key in merged:
+            merged[key].extend(hierarchy[key])
+    return merged
+
+
+def _make_student(**overrides):
+    overrides.setdefault("email", f"student-{ObjectId()}@college.test")
+    overrides.setdefault("password", FAKE_PASSWORD)
+    overrides.setdefault("role", "student")
+    return make_user(**overrides)
+
+
+def _login_as_student(
+    monkeypatch, client, student, *, classes=None, class_enrollments=None,
+    extra_users=None, **collections
+):
+    """Logs in as `student`, whose id already appears in whatever
+    `class_enrollments`/`attendance_records` the caller built -- the
+    enrolled-student counterpart of `_login_as_owner` above.
+    """
+    fake_db = make_fake_attendance_db(
+        users=[student] + list(extra_users or []),
+        classes=list(classes or []),
+        class_enrollments=list(class_enrollments or []),
+        **collections,
+    )
+    _patch_db(monkeypatch, fake_db)
+    _login(client, student["email"], FAKE_PASSWORD)
+    return fake_db, _csrf_headers(client)
+
+
+def _get_my_attendance(client, headers=None):
+    return client.get("/api/attendance/me", headers=headers or {})
+
+
+def _get_my_class_attendance(client, class_id, headers=None, *, query=""):
+    suffix = f"&{query}" if query else ""
+    return client.get(
+        f"/api/attendance/me/sessions?class_id={class_id}{suffix}", headers=headers or {}
+    )
+
+
+def _both_student_dashboard_requests(client, headers):
+    """One representative request per 09-student-attendance-dashboard.md
+    endpoint, used the same way `_all_four_endpoint_requests` /
+    `_all_history_endpoint_requests` are: to prove role enforcement /
+    authentication short-circuits before any id is resolved. A dummy
+    class_id is fine for the same reason.
+    """
+    class_id = str(ObjectId())
+    return [
+        _get_my_attendance(client, headers),
+        _get_my_class_attendance(client, class_id, headers),
+    ]
+
+
+_FORBIDDEN_STUDENT_RESPONSE_KEYS = {"marked_by", "taken_by", "updated_by", "source"}
+
+
+def _assert_no_forbidden_keys(payload):
+    """No key anywhere in a student response may be attendance provenance
+    -- these are audit fields for judging recognition, not something a
+    student's own dashboard is entitled to see (09's "Rules for
+    implementation").
+    """
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            assert key not in _FORBIDDEN_STUDENT_RESPONSE_KEYS, (
+                f"forbidden key {key!r} present in {payload}"
+            )
+            _assert_no_forbidden_keys(value)
+    elif isinstance(payload, list):
+        for item in payload:
+            _assert_no_forbidden_keys(item)
+
+
+def _leaf_values(payload):
+    if isinstance(payload, dict):
+        for value in payload.values():
+            yield from _leaf_values(value)
+    elif isinstance(payload, list):
+        for item in payload:
+            yield from _leaf_values(item)
+    else:
+        yield payload
+
+
+def _assert_none_of_these_values_present(payload, forbidden_values):
+    """Checks the parsed JSON structurally -- every leaf value in the body,
+    not a substring search over the raw text -- for anything that must
+    never appear in a student's own attendance response: another
+    student's id/name/email, a session id, provenance values, and the
+    like.
+    """
+    leaked = set(_leaf_values(payload)) & set(forbidden_values)
+    assert not leaked, f"forbidden values leaked into response: {leaked}"
+
+
+# --- GET /api/attendance/me ---------------------------------------------------
+
+
+class TestGetMyAttendanceRoute:
+    def test_returns_one_entry_per_enrolled_class_with_hierarchy_names_and_overall_rollup(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc))
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status="present"),
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert len(body["classes"]) == 1
+        entry = body["classes"][0]
+        assert entry["id"] == str(klass["_id"])
+        assert entry["course"] == "Data Structures"
+        assert entry["semester"] == "Semester 3"
+        assert entry["department"] == "Computer Engineering"
+        assert entry["institute"] == "Test Institute"
+        assert entry["present_count"] == 1
+        assert entry["absent_count"] == 0
+        assert entry["total_count"] == 1
+        assert entry["percentage"] == 100.0
+        assert body["overall"] == {
+            "present_count": 1, "absent_count": 0, "total_count": 1, "percentage": 100.0,
+        }
+
+    def test_empty_enrollment_returns_200_with_empty_classes_and_zeroed_overall(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(monkeypatch, client, student)
+
+            response = _get_my_attendance(client, headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["classes"] == []
+        assert body["overall"] == {
+            "present_count": 0, "absent_count": 0, "total_count": 0, "percentage": None,
+        }
+
+    def test_a_class_with_no_attendance_taken_yet_has_total_zero_and_percentage_null(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["total_count"] == 0
+        assert entry["present_count"] == 0
+        assert entry["absent_count"] == 0
+        assert entry["percentage"] is None
+
+    def test_student_enrolled_after_some_lectures_is_not_marked_down(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        # Two lectures were held before this student joined the class; a
+        # record exists for them only from the one held afterwards.
+        before_joining = make_attendance_session(
+            klass["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc)
+        )
+        after_joining = make_attendance_session(
+            klass["_id"], date=datetime(2020, 2, 1, tzinfo=timezone.utc)
+        )
+        records = [
+            make_attendance_record(after_joining["_id"], klass["_id"], student["_id"], status="present"),
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[before_joining, after_joining], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["total_count"] == 1
+        assert entry["present_count"] == 1
+        assert entry["percentage"] == 100.0
+
+    def test_a_record_for_a_class_the_student_is_not_enrolled_in_never_appears(
+        self, app_instance, monkeypatch
+    ):
+        """The trap case the spec calls out by name: a stored
+        attendance_records row that references this student's id but a
+        class_id they are not enrolled in must not appear in `classes` or
+        contribute to `overall`.
+        """
+        student = _make_student()
+        enrolled_class, enrolled_hierarchy = _build_class_with_hierarchy(
+            class_name="A", course_name="Data Structures",
+        )
+        other_class, other_hierarchy = _build_class_with_hierarchy(
+            class_name="B", course_name="Other Course",
+        )
+        enrollment = make_class_enrollment(enrolled_class["_id"], student["_id"])
+        enrolled_session = make_attendance_session(
+            enrolled_class["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc)
+        )
+        enrolled_record = make_attendance_record(
+            enrolled_session["_id"], enrolled_class["_id"], student["_id"], status="present",
+        )
+        # This student has no enrollment in `other_class`, yet a record
+        # names them there anyway (e.g. left behind by a since-reverted
+        # enrollment).
+        stray_session = make_attendance_session(
+            other_class["_id"], date=datetime(2020, 1, 2, tzinfo=timezone.utc)
+        )
+        stray_record = make_attendance_record(
+            stray_session["_id"], other_class["_id"], student["_id"], status="absent",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[enrolled_class, other_class], class_enrollments=[enrollment],
+                attendance_sessions=[enrolled_session, stray_session],
+                attendance_records=[enrolled_record, stray_record],
+                **_merge_hierarchies(enrolled_hierarchy, other_hierarchy),
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        body = response.get_json()
+        assert [c["id"] for c in body["classes"]] == [str(enrolled_class["_id"])]
+        # If the stray absence had leaked in, overall would show 1 present,
+        # 1 absent, 2 total instead.
+        assert body["overall"] == {
+            "present_count": 1, "absent_count": 0, "total_count": 1, "percentage": 100.0,
+        }
+
+    def test_a_classmates_record_in_a_shared_class_does_not_affect_this_students_counts(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        classmate = _make_student(name="Classmate", email=f"classmate-{ObjectId()}@college.test")
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        classmate_enrollment = make_class_enrollment(klass["_id"], classmate["_id"])
+        session = make_attendance_session(klass["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc))
+        my_record = make_attendance_record(
+            session["_id"], klass["_id"], student["_id"], status="present",
+        )
+        classmates_records = [
+            make_attendance_record(session["_id"], klass["_id"], classmate["_id"], status="absent"),
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                extra_users=[classmate],
+                classes=[klass], class_enrollments=[enrollment, classmate_enrollment],
+                attendance_sessions=[session], attendance_records=[my_record] + classmates_records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["present_count"] == 1
+        assert entry["absent_count"] == 0
+        assert entry["total_count"] == 1
+
+
+# --- GET /api/attendance/me/sessions ------------------------------------------
+
+
+class TestGetMyClassAttendanceRoute:
+    def test_returns_own_status_for_every_lecture_newest_first_with_monthly_oldest_first(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        january = make_attendance_session(klass["_id"], date=datetime(2020, 1, 10, tzinfo=timezone.utc))
+        february = make_attendance_session(klass["_id"], date=datetime(2020, 2, 10, tzinfo=timezone.utc))
+        records = [
+            make_attendance_record(january["_id"], klass["_id"], student["_id"], status="present"),
+            make_attendance_record(february["_id"], klass["_id"], student["_id"], status="absent"),
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[january, february], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["class"]["id"] == str(klass["_id"])
+        assert body["class"]["course"] == "Data Structures"
+        assert [row["date"] for row in body["sessions"]] == ["2020-02-10", "2020-01-10"]
+        assert [row["status"] for row in body["sessions"]] == ["absent", "present"]
+        assert [bucket["month"] for bucket in body["monthly"]] == ["2020-01", "2020-02"]
+
+    def test_present_plus_absent_equals_total_in_header_monthly_and_session_length(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        sessions = [
+            make_attendance_session(klass["_id"], date=datetime(2020, 1, day, tzinfo=timezone.utc))
+            for day in (1, 2, 3)
+        ]
+        statuses = ["present", "absent", "present"]
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status=status)
+            for session, status in zip(sessions, statuses)
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        body = response.get_json()
+        assert body["present_count"] + body["absent_count"] == body["total_count"] == 3
+        assert len(body["sessions"]) == body["total_count"]
+        for bucket in body["monthly"]:
+            assert bucket["present_count"] + bucket["absent_count"] == bucket["total_count"]
+
+    def test_denominator_is_the_students_own_records_only(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        before_joining = make_attendance_session(
+            klass["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc)
+        )
+        after_joining = make_attendance_session(
+            klass["_id"], date=datetime(2020, 2, 1, tzinfo=timezone.utc)
+        )
+        records = [
+            make_attendance_record(after_joining["_id"], klass["_id"], student["_id"], status="present"),
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[before_joining, after_joining], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        body = response.get_json()
+        assert body["total_count"] == 1
+        assert len(body["sessions"]) == 1
+        assert body["sessions"][0]["date"] == "2020-02-01"
+
+    def test_from_and_to_filter_inclusively_and_narrow_sessions_and_monthly_together(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        january = make_attendance_session(klass["_id"], date=datetime(2020, 1, 1, tzinfo=timezone.utc))
+        february = make_attendance_session(klass["_id"], date=datetime(2020, 2, 1, tzinfo=timezone.utc))
+        march = make_attendance_session(klass["_id"], date=datetime(2020, 3, 1, tzinfo=timezone.utc))
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status="present")
+            for session in (january, february, march)
+        ]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[january, february, march], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-02-01",
+            )
+
+        body = response.get_json()
+        assert {row["date"] for row in body["sessions"]} == {"2020-01-01", "2020-02-01"}
+        assert {bucket["month"] for bucket in body["monthly"]} == {"2020-01", "2020-02"}
+        assert body["total_count"] == 2
+
+    def test_to_earlier_than_from_returns_400(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            response = _get_my_class_attendance(
+                client, klass["_id"], headers, query="from=2020-02-01&to=2020-01-01",
+            )
+
+        assert response.status_code == 400
+
+    def test_a_malformed_from_returns_400(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            response = _get_my_class_attendance(
+                client, klass["_id"], headers, query="from=not-a-date",
+            )
+
+        assert response.status_code == 400
+
+    def test_missing_class_id_returns_400(self, app_instance, monkeypatch):
+        student = _make_student()
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(monkeypatch, client, student)
+
+            response = client.get("/api/attendance/me/sessions", headers=headers)
+
+        assert response.status_code == 400
+
+    def test_malformed_class_id_returns_400(self, app_instance, monkeypatch):
+        student = _make_student()
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(monkeypatch, client, student)
+
+            response = _get_my_class_attendance(client, "not-a-valid-id", headers)
+
+        assert response.status_code == 400
+
+    def test_unenrolled_class_returns_403(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        # No enrollment for this student in this class.
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student, classes=[klass], **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        assert response.status_code == 403
+
+    def test_nonexistent_class_returns_404(self, app_instance, monkeypatch):
+        student = _make_student()
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(monkeypatch, client, student)
+
+            response = _get_my_class_attendance(client, ObjectId(), headers)
+
+        assert response.status_code == 404
+
+    def test_neither_403_nor_404_is_a_500(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student, classes=[klass], **hierarchy,
+            )
+
+            unenrolled = _get_my_class_attendance(client, klass["_id"], headers)
+            nonexistent = _get_my_class_attendance(client, ObjectId(), headers)
+
+        assert {unenrolled.status_code, nonexistent.status_code} == {403, 404}
+
+
+# --- Never leaks another student, a roster, or provenance ---------------------
+
+
+class TestStudentDashboardNeverLeaksAnything:
+    def test_overview_class_row_and_overall_carry_only_the_documented_fields(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"], taken_by=ObjectId(), source="video")
+        record = make_attendance_record(
+            session["_id"], klass["_id"], student["_id"], status="present", marked_by="recognition",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=[record],
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        body = response.get_json()
+        entry = body["classes"][0]
+        assert set(entry.keys()) == {
+            "id", "name", "course", "semester", "department", "institute",
+            "present_count", "absent_count", "total_count", "percentage",
+        }
+        assert set(body["overall"].keys()) == {
+            "present_count", "absent_count", "total_count", "percentage",
+        }
+        _assert_no_forbidden_keys(body)
+
+    def test_overview_never_contains_a_classmates_identity_a_session_id_or_a_faculty_id(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        classmate = _make_student(name="Classmate Person")
+        faculty_id = ObjectId()
+        klass, hierarchy = _build_class_with_hierarchy(faculty_id=faculty_id)
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        classmate_enrollment = make_class_enrollment(klass["_id"], classmate["_id"])
+        session = make_attendance_session(klass["_id"], taken_by=faculty_id)
+        my_record = make_attendance_record(
+            session["_id"], klass["_id"], student["_id"], status="present", marked_by="recognition",
+        )
+        classmates_record = make_attendance_record(
+            session["_id"], klass["_id"], classmate["_id"], status="absent", marked_by="faculty",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                extra_users=[classmate],
+                classes=[klass], class_enrollments=[enrollment, classmate_enrollment],
+                attendance_sessions=[session], attendance_records=[my_record, classmates_record],
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        forbidden_values = {
+            str(classmate["_id"]), classmate["name"], classmate["email"],
+            str(session["_id"]), str(faculty_id),
+        }
+        _assert_none_of_these_values_present(response.get_json(), forbidden_values)
+
+    def test_class_detail_carries_only_the_documented_fields_at_every_level(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"], taken_by=ObjectId(), source="photo")
+        record = make_attendance_record(
+            session["_id"], klass["_id"], student["_id"], status="present", marked_by="recognition",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=[record],
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        body = response.get_json()
+        assert set(body.keys()) == {
+            "class", "present_count", "absent_count", "total_count",
+            "percentage", "monthly", "sessions",
+        }
+        assert set(body["class"].keys()) == {
+            "id", "name", "course", "semester", "department", "institute",
+        }
+        for row in body["sessions"]:
+            assert set(row.keys()) == {"date", "status"}
+        for bucket in body["monthly"]:
+            assert set(bucket.keys()) == {
+                "month", "present_count", "absent_count", "total_count", "percentage",
+            }
+        _assert_no_forbidden_keys(body)
+
+    def test_class_detail_never_contains_a_session_id_or_a_faculty_id_value(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        faculty_id = ObjectId()
+        klass, hierarchy = _build_class_with_hierarchy(faculty_id=faculty_id)
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"], taken_by=faculty_id, source="video")
+        record = make_attendance_record(
+            session["_id"], klass["_id"], student["_id"], status="present", marked_by="recognition",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=[record],
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        forbidden_values = {str(session["_id"]), str(faculty_id)}
+        _assert_none_of_these_values_present(response.get_json(), forbidden_values)
+
+
+# --- No student id is ever read from the request -------------------------------
+
+
+class TestNoStudentIdIsEverReadFromTheRequest:
+    def test_a_student_id_query_param_on_the_overview_does_not_change_the_response(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            baseline = _get_my_attendance(client, headers).get_json()
+            spoofed = client.get(
+                f"/api/attendance/me?student_id={ObjectId()}", headers=headers,
+            ).get_json()
+
+        assert spoofed == baseline
+
+    def test_a_student_id_query_param_on_the_class_detail_does_not_change_the_response(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"])
+        record = make_attendance_record(session["_id"], klass["_id"], student["_id"], status="present")
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=[record],
+                **hierarchy,
+            )
+
+            baseline = _get_my_class_attendance(client, klass["_id"], headers).get_json()
+            spoofed = client.get(
+                f"/api/attendance/me/sessions?class_id={klass['_id']}&student_id={ObjectId()}",
+                headers=headers,
+            ).get_json()
+
+        assert spoofed == baseline
+
+    def test_a_student_id_in_a_json_body_does_not_change_the_overview_response(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            baseline = _get_my_attendance(client, headers).get_json()
+            spoofed = client.open(
+                "/api/attendance/me", method="GET", headers=headers,
+                json={"student_id": str(ObjectId())},
+            ).get_json()
+
+        assert spoofed == baseline
+
+
+# --- Role enforcement -----------------------------------------------------------
+
+
+class TestStudentDashboardRoleEnforcement:
+    def test_faculty_receives_403_on_both_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            responses = _both_student_dashboard_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_admin_receives_403_on_both_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "admin")
+
+            responses = _both_student_dashboard_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_unauthenticated_receives_401_on_both_endpoints(self, app_instance, monkeypatch):
+        fake_db = make_fake_attendance_db()
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            responses = _both_student_dashboard_requests(client, headers={})
+
+        assert all(r.status_code == 401 for r in responses), [r.status_code for r in responses]
+
+
+# --- No CV dependency on this path ----------------------------------------------
+
+
+class TestStudentDashboardHasNoCvDependency:
+    def test_neither_endpoint_returns_503_when_recognition_and_video_are_unavailable(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+            _stub_recognition(monkeypatch, recognition_available=False, video_available=False)
+
+            overview = _get_my_attendance(client, headers)
+            detail = _get_my_class_attendance(client, klass["_id"], headers)
+
+        assert overview.status_code == 200
+        assert detail.status_code == 200

@@ -1,11 +1,13 @@
 import { requestJson as request } from './client'
 
 /**
- * Client for the faculty attendance-capture API.
+ * Client for the attendance API — the faculty capture and history screens,
+ * and the student's view of their own record.
  *
- * Cookies, the X-CSRF-TOKEN header, the transparent refresh-and-retry on
- * 401, and turning a backend error body into a thrown Error are all handled
- * by requestJson in ./client — none of that is repeated here.
+ * One file because it is one resource. Cookies, the X-CSRF-TOKEN header, the
+ * transparent refresh-and-retry on 401, and turning a backend error body into
+ * a thrown Error are all handled by requestJson in ./client — none of that is
+ * repeated here.
  *
  * Note what these functions never carry: no encoding vector, and no captured
  * image or video beyond the one request that analyses it. Nothing here holds
@@ -100,4 +102,30 @@ export function deleteAttendanceSession(sessionId) {
   return request(`/api/attendance/sessions/${encodeURIComponent(sessionId)}`, {
     method: 'DELETE',
   })
+}
+
+/**
+ * The signed-in student's own attendance across every class they are enrolled
+ * in: `{ classes, overall }`.
+ *
+ * There is no student id to pass. The backend reads the caller's identity from
+ * the session cookie, which is what makes another student's attendance
+ * unreachable rather than merely forbidden.
+ */
+export function getMyAttendance() {
+  return request('/api/attendance/me')
+}
+
+/**
+ * One class in detail for the signed-in student: their standing, a
+ * month-by-month trend, and their status for each lecture they were counted
+ * in. `from`/`to` are optional inclusive YYYY-MM-DD bounds and narrow the
+ * trend and the lecture list together.
+ */
+export function getMyClassAttendance(classId, { from, to } = {}) {
+  const query = new URLSearchParams({ class_id: classId })
+  if (from) query.set('from', from)
+  if (to) query.set('to', to)
+
+  return request(`/api/attendance/me/sessions?${query}`)
 }

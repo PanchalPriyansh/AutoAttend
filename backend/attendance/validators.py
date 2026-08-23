@@ -138,11 +138,17 @@ def _parse_bounded_int(args, field_name, *, default, minimum, maximum=None):
     return min(value, maximum) if maximum is not None else value
 
 
-def parse_session_filters(args):
-    """Validate the query string of the session history list.
+def parse_date_range(args):
+    """Validate an inclusive `from`/`to` filter on the lecture date.
 
-    Returns the four values the service needs. `from`/`to` are inclusive
-    bounds on the lecture date; either may be omitted.
+    Returns `{"date_from": …, "date_to": …}`, either of which may be None
+    when the caller did not narrow that end.
+
+    Two callers, one rule. The faculty session history and the student's
+    own attendance both let a date range be applied to the same stored
+    `date` field, and a second copy of "to cannot be earlier than from"
+    is how the two screens start disagreeing about what an empty result
+    means.
     """
     date_from = parse_optional_date(args, "from")
     date_to = parse_optional_date(args, "to")
@@ -150,9 +156,19 @@ def parse_session_filters(args):
     if date_from is not None and date_to is not None and date_to < date_from:
         raise ValidationError("to cannot be earlier than from")
 
+    return {"date_from": date_from, "date_to": date_to}
+
+
+def parse_session_filters(args):
+    """Validate the query string of the session history list.
+
+    Returns the four values the service needs: the inclusive date range
+    plus the paging bounds.
+    """
     return {
-        "date_from": date_from,
-        "date_to": date_to,
+        # Evaluated first, so a malformed date is still reported before a
+        # malformed limit -- the order the single-function version raised in.
+        **parse_date_range(args),
         "limit": _parse_bounded_int(
             args, "limit", default=DEFAULT_SESSION_LIMIT, minimum=1,
             maximum=MAX_SESSION_LIMIT,

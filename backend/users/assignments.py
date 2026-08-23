@@ -120,6 +120,30 @@ def list_enrollments(db, class_id):
     return pairs
 
 
+def list_student_classes(db, student_id):
+    """Return the class documents one student is enrolled in.
+
+    The inverse of `list_enrollments` above, and a two-query join for the
+    same reason: `student_id` leads `idx_student_id` on
+    `class_enrollments`, and the `$in` rides `_id` on `classes`, so the
+    cost tracks how many classes this student takes rather than how many
+    the institute has.
+
+    Returned unsorted, deliberately. The order a student reads these in is
+    by course name, and the course is one hierarchy level up -- a caller
+    that has resolved those names can sort properly, whereas sorting by
+    the bare class name here would produce an order nobody wants.
+    """
+    enrollments = list(
+        db[CLASS_ENROLLMENTS].find({"student_id": student_id}, {"class_id": 1})
+    )
+    if not enrollments:
+        return []
+
+    class_ids = [enrollment["class_id"] for enrollment in enrollments]
+    return list(db[CLASSES].find({"_id": {"$in": class_ids}}))
+
+
 def enroll_student(db, class_id, student_id):
     _require_class(db, class_id)
     student = require_user_with_role(db, student_id, "student", "student_id")
