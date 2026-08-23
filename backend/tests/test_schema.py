@@ -42,11 +42,14 @@ ALL_COLLECTION_NAMES = {
     schema.ATTENDANCE_RECORDS,
 }
 
-# Substrings that would indicate a collection belongs to a later,
-# out-of-scope feature (ML, notifications). "face"/"encoding" were removed
-# when 06-face-enrollment.md landed and "attendance" when
-# 07-attendance-capture.md did; everything below still belongs to a spec
-# that has not been implemented.
+# Substrings that would indicate a collection this project should not have.
+# "face"/"encoding" were removed when 06-face-enrollment.md landed and
+# "attendance" when 07-attendance-capture.md did.
+#
+# "ml"/"predict"/"risk" are permanent: AutoAttend records attendance and
+# nothing else -- no marks, no grades, no assessments, and no model to feed
+# them to (see CLAUDE.md, "Warnings and things to avoid"). "notification" is
+# temporary and the low-attendance email spec should remove it.
 OUT_OF_SCOPE_NAME_FRAGMENTS = [
     "ml",
     "predict",

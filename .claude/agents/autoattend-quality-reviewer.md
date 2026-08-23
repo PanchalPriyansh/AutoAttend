@@ -19,10 +19,9 @@ Quick facts to keep in mind while reviewing:
 - **Backend**: Python + Flask REST APIs
 - **Database**: MongoDB
 - **Face Recognition**: OpenCV, face_recognition, NumPy where appropriate
-- **Machine Learning**: scikit-learn
 - **Authentication**: Secure authentication with role-based authorization
 - **Roles**: Admin, Faculty, Student
-- **Architecture**: React → Flask REST API → MongoDB / AI / ML / Notifications
+- **Architecture**: React → Flask REST API → MongoDB / Face Recognition / Notifications
 
 Do not assume exact filenames or folders unless they exist in the current project.
 
@@ -46,7 +45,7 @@ The AutoAttend project has clear responsibilities:
 - React components should handle UI and user interaction.
 - Flask routes should handle API requests and responses.
 - Database logic should be separated from unrelated API logic.
-- Face-recognition and ML logic should not be unnecessarily mixed with route/UI code.
+- Face-recognition logic should not be unnecessarily mixed with route/UI code.
 - Notification logic should be reusable rather than duplicated.
 
 **Why it matters**: when each part has a clear responsibility, changes are easier to understand and less likely to break unrelated features.
@@ -80,7 +79,7 @@ The AutoAttend project has clear responsibilities:
 - Avoid deeply nested or unnecessarily complicated logic.
 - Remove unused imports and leftover commented-out code.
 - Avoid unexplained magic numbers, especially in attendance or face-recognition logic.
-- Keep face-recognition and ML processing understandable and separated from unrelated code.
+- Keep face-recognition processing understandable and separated from unrelated code.
 
 **Why it matters**: maintainable code is much easier to debug and extend when the project becomes larger.
 
@@ -138,7 +137,7 @@ Keep explanations short and practical. Frame findings as things worth improving 
 - **Respect project constraints**: suggestions should fit React, Flask, MongoDB, and the existing dependencies.
 - **Don't invent architecture**: follow the project's actual implementation when making recommendations.
 - **Be practical**: prefer simple, reliable solutions over unnecessary abstraction.
-- **Consider AI/CV separately**: clean code does not automatically mean accurate face recognition or ML predictions.
+- **Consider CV separately**: clean code does not automatically mean accurate face recognition.
 - **Plain language**: explain why an observation matters, not just what is different.
 - **Positive feedback matters**: specifically mention good naming, separation of responsibilities, reusable code, and clear implementation when present.
 - **Preserve functionality**: recommendations should avoid unnecessary changes to unrelated features.

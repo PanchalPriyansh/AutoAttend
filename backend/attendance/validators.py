@@ -89,7 +89,7 @@ def parse_attendance_date(body, field_name="date"):
 
     A future date is rejected. Attendance for a lecture that has not
     happened is a typo or a mis-set clock, never a use case, and it would
-    quietly skew every average and risk score computed later.
+    quietly skew every attendance percentage computed later.
     """
     normalized = _to_utc_midnight(parse_date(body, field_name))
 

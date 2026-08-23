@@ -112,7 +112,6 @@ Consider AutoAttend requirements such as:
 - Attendance validation
 - Duplicate attendance prevention
 - Face-recognition result handling
-- ML prediction behavior
 - Notification handling
 
 Do not recommend installing new packages unless the project explicitly requires them.
@@ -181,7 +180,6 @@ Pay particular attention to failures involving:
 - Invalid attendance dates
 - Unknown or unrecognized faces
 - Duplicate face detections
-- ML prediction input/output
 - Notification failures
 - API response/status mismatches
 - MongoDB connection or data issues

@@ -2,15 +2,17 @@
 
 ## Project overview
 
-AutoAttend is a smart attendance management system for a college environment, built with React.js, Flask, MongoDB, face recognition, and machine learning.
+AutoAttend is an automatic attendance management system for a college environment, built with React.js, Flask, MongoDB, and face recognition.
 
-Manually calling roll and tracking attendance/academic risk wastes lecture time and gives students and faculty no early warning when attendance or performance starts slipping. AutoAttend addresses this by letting faculty mark attendance from a single classroom photo/video via face recognition, giving students self-service visibility into their own attendance, and using a lightweight ML model to flag students who may be at academic risk so they can be notified early.
+Manually calling roll wastes lecture time, and a student whose attendance is slipping usually finds out too late to fix it. AutoAttend addresses this by letting faculty mark attendance from a single classroom photo/video via face recognition, giving students self-service visibility into their own attendance, and emailing students whose attendance falls below the required threshold.
+
+**The project is built around attendance and nothing else.** It does not record marks, grades, or assessments, and it does not predict academic risk. An earlier draft of this file described a scikit-learn academic-risk model; that was never built and has been cancelled deliberately — see the "Warnings" section. The machine-learning component of this project is the face recognition itself.
 
 The system supports three primary roles:
 
 - **Admin** — manages users, the academic structure, and face enrollment.
 - **Faculty** — takes attendance for assigned courses/classes and views related academic data.
-- **Student** — views their own attendance, trends, and risk indicators.
+- **Student** — views their own attendance and trends.
 
 There is no public registration. Accounts are provisioned by the admin, and login redirects each user to their role-specific portal (Admin Portal / Faculty Dashboard / Student Dashboard).
 
@@ -33,8 +35,7 @@ Each level is scoped to its parent (e.g., a class only makes sense within its de
 ## Core capabilities
 
 - **Face recognition attendance** — faculty capture a classroom image/video for a selected academic context (institute/department/semester/course/class/date); the recognition pipeline matches faces against registered students to produce present/absent lists, which faculty review before saving.
-- **ML academic-risk prediction** — a scikit-learn model uses attendance/performance data to flag students as an early-warning/decision-support signal, not a high-stakes or certain outcome.
-- **Low-attendance notifications** — students falling below an attendance threshold are notified by email (SMTP).
+- **Low-attendance notifications** — students falling below an attendance threshold are notified by email (SMTP). The threshold is a plain configured percentage, checked against recorded attendance; there is no model and no prediction involved.
 
 ---
 
@@ -56,9 +57,6 @@ AutoAttend/
 │   ├── face_recognition
 │   └── NumPy
 │
-├── Machine Learning
-│   └── scikit-learn
-│
 └── Notifications
     └── SMTP / Email
 ```
@@ -72,7 +70,7 @@ Flask REST API
     ↓
 MongoDB
     ↓
-Face Recognition / ML / Notifications
+Face Recognition / Notifications
 ```
 
 **Where things belong:**
@@ -82,7 +80,6 @@ Face Recognition / ML / Notifications
 - Database operations → backend database/data layer
 - Attendance logic → backend business logic
 - Face recognition → dedicated CV/recognition logic
-- ML prediction → dedicated ML logic
 - Notifications → dedicated notification/email logic
 - Configuration/secrets → environment variables
 
@@ -111,8 +108,8 @@ Follow the actual project structure once these responsibilities are organized in
 - **Flask** — backend web framework
 - **MongoDB** — application database
 - **OpenCV / face_recognition / NumPy** — face-recognition functionality where required
-- **scikit-learn** — machine-learning functionality
-- **SMTP/email libraries** — notifications
+- **SMTP/email libraries** — notifications (Python's stdlib `smtplib`/`email` unless something is genuinely missing)
+- **No scikit-learn, and no ML framework of any kind** — the project does no model training or prediction
 - **No unnecessary dependencies** — introduce new packages only when genuinely required
 - **No unnecessary frameworks** — follow the established project stack
 
@@ -247,8 +244,8 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 | Face recognition (attendance matching) | Implemented — `recognition/matcher.py` matches faces detected in a capture against the roster's encodings only, collapsing duplicate claims to the best distance and counting everything else as an unknown face. `recognition/frames.py` is the only `cv2` importer and samples up to 8 frames from a video; both CV libraries stay lazily imported, so a server missing either still starts and only the affected path returns `503`. |
 | Attendance system | Implemented — faculty-only `/api/classes/assigned`, `POST /api/attendance/recognize` (proposes, writes nothing), `GET /api/attendance/session`, and `POST /api/attendance` (saves a reviewed list). Every class-scoped endpoint additionally requires `classes.faculty_id` to be the caller (`403` otherwise, including for an unassigned class). Stores `attendance_sessions` (one per class per date, unique index, `date` at UTC midnight) and `attendance_records` (one per student, absences explicit, `marked_by` recording whether recognition or a human decided). The captured photo/video is never persisted — the video temp file OpenCV needs is deleted in a `finally`. Faculty UI at `/faculty/attendance`. Deferred: admins cannot take attendance; no live/streaming recognition; and recognition runs synchronously in the request, so a large video occupies a worker. |
 | Faculty attendance history | Implemented — faculty-only `GET /api/attendance/sessions` (one owned class at a time, optional inclusive `from`/`to`, `limit` default 50 / max 200, newest first, counts from one `$group` aggregation and no `records` array), plus `GET`/`PUT`/`DELETE /api/attendance/sessions/<id>`. Ownership is reached through the session, so an unknown id is `404` and another faculty member's session is `403`. An edit changes statuses only (`class_id`, `date`, `source`, `created_at`, `taken_by` immutable) and is validated against the students already in the session rather than today's roster; it stamps the optional `attendance_sessions.updated_by`, while `edited` is derived from `updated_at > created_at`. A delete removes the records first, then the session, and is not recoverable. No CV import on any of these paths. Faculty UI at `/faculty/attendance/history`. Deferred: admins cannot view or edit attendance; no cross-class or institute-wide view; no CSV/PDF export; and there is no per-edit audit trail beyond who last changed it and when. |
-| ML prediction | Follow current implementation status |
-| Notifications | Follow current implementation status |
+| ML prediction | **Cancelled — not part of this project.** No model, no training, no `scikit-learn`, and no marks/grades/assessment data to train on. Do not propose or build it. |
+| Notifications | Follow current implementation status — the last remaining feature. |
 
 **Do not implement an unfinished feature unless the active task explicitly targets it.**
 
@@ -263,9 +260,9 @@ Update this section when major features become implemented.
 - **Never rely only on frontend authorization** — role permissions must be enforced by the Flask backend.
 - **Never expose sensitive biometric data unnecessarily.**
 - **Never hardcode academic data** when it should come from MongoDB.
-- **Never present ML risk predictions as certain or high-stakes outcomes** — treat them as an early-warning/decision-support signal, and evaluate the model before trusting it.
+- **Never add marks, grades, assessments, or academic-risk prediction.** AutoAttend is an automatic attendance system; attendance is the only student data it records. A low-attendance email is a threshold check against recorded attendance, never a model output — do not introduce `scikit-learn` or any training/prediction step to produce it.
 - **Never put large amounts of business logic directly inside Flask routes.**
-- **Never unnecessarily mix face-recognition or ML processing with unrelated application logic.**
+- **Never unnecessarily mix face-recognition processing with unrelated application logic.**
 - **Never install unnecessary packages mid-feature.**
 - **Never treat face recognition as perfectly accurate.** Handle unknown faces, duplicate detections, weak matches, false positives, and false negatives.
 - **Never modify attendance without proper authorization and validation.**

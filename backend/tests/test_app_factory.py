@@ -55,8 +55,14 @@ def _is_role_portal_namespace(path, prefix):
 
 # "attendance" was removed when .claude/specs/07-attendance-capture.md
 # landed and legitimately introduced those routes, the same way
-# 06-face-enrollment.md earned face enrolment. Everything below still
-# belongs to a spec that has not been implemented.
+# 06-face-enrollment.md earned face enrolment.
+#
+# The two remaining entries are not the same kind of thing:
+#   - "prediction"/"risk" are permanent. AutoAttend does no model training
+#     or prediction, and CLAUDE.md now rules the academic-risk model out of
+#     scope entirely -- so nothing should ever earn these back.
+#   - "notification" is temporary, and the low-attendance email spec is
+#     expected to remove it the way 07 removed "attendance".
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
     "prediction",
     "risk",
@@ -142,7 +148,7 @@ class TestAppFactory:
                     "implemented until their own feature specs."
                 )
 
-    def test_no_ml_or_notification_routes_exist_yet(self, app_instance):
+    def test_no_ml_or_notification_routes_exist(self, app_instance):
         registered_paths = [rule.rule for rule in app_instance.url_map.iter_rules()]
 
         assert "/api/health" in registered_paths
@@ -152,8 +158,9 @@ class TestAppFactory:
             for fragment in OUT_OF_SCOPE_ROUTE_FRAGMENTS:
                 assert fragment not in lowered, (
                     f"Route '{path}' looks like out-of-scope business logic; "
-                    "ML risk prediction and notifications are not implemented "
-                    "until their own feature specs. (Face *enrolment* is in "
+                    "risk prediction is permanently out of scope for this "
+                    "project, and notifications are not implemented until "
+                    "their own feature spec. (Face *enrolment* is in "
                     "scope as of 06-face-enrollment.md and classroom "
                     "recognition as of 07-attendance-capture.md.)"
                 )
