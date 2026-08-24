@@ -52,7 +52,13 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --text-muted: #7b8291;
+    /* Lightened from #7b8291, which cleared 4.5:1 against --bg (4.64) but
+       not against --surface (4.21) -- so it was safe only for as long as
+       nothing put muted text on a card. This value clears both (5.37 on
+       --bg, 4.88 on --surface) and still reads dimmer than --text, which
+       is 6.40 on the same surface. Light mode already passed both (5.21
+       and 4.80) and is unchanged. */
+    --text-muted: #868d9c;
     --bg: #16171d;
     --surface: #1e2028;
     --border: #333642;
