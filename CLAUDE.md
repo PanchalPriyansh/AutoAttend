@@ -128,6 +128,8 @@ Optional technologies (e.g. Gemini API, Cloudinary) may only be introduced when 
 - Quality and security reviewers should run in parallel.
 - Do not skip the feature specification when the development workflow requires one.
 - Do not make code changes based on review findings until explicitly approved when using `/code-review-feature`.
+- Use `/frontend-maker <page>` for UI work on an existing page. It runs `autoattend-css-designer` first, stops for approval, then runs `autoattend-responsive-designer`, then a guidelines audit. Do not invoke the two design agents by hand for a page the command already covers.
+- `autoattend-responsive-designer` can also be invoked directly for a general responsiveness sweep; it then applies its own "significant UI changes" gate and stops if nothing warrants a review. That gate is skipped when a specific page is named. (It replaced the `/make-responsive` command, which was removed so the rule lives with the agent that applies it.)
 
 Available project agents:
 
@@ -135,6 +137,8 @@ Available project agents:
 - `autoattend-security-reviewer`
 - `autoattend-test-writer`
 - `autoattend-test-runner`
+- `autoattend-css-designer`
+- `autoattend-responsive-designer`
 
 ---
 

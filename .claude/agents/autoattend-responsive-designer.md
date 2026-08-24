@@ -45,7 +45,15 @@ Do not consider these significant by themselves:
 - Documentation changes
 - Test-only changes
 
+## Two ways you get invoked, and the gate only applies to one
+
+**Directly** ("review responsiveness", "check the mobile layout") - with no page named. Apply the significance gate below: work out whether meaningful UI changes have landed since the last responsive review, and stop if they have not. This is what keeps a repeat review from churning files for no reason. This gate came from the `/make-responsive` command, which was removed in favour of keeping the rule here, where it cannot drift out of sync with the agent that applies it.
+
+**From `/frontend-maker`, with a page named and just restyled** - the gate does not apply. The design work that just happened *is* the significant change, and it is already approved. Skip the significance check entirely and review that page. Scope yourself to the named page and the shared components it renders; do not wander into unrelated screens.
+
 ## No-Change Condition
+
+Applies to a direct invocation only, never when a page was named.
 
 If there are no significant frontend/UI changes since the previous responsive review:
 
@@ -65,6 +73,22 @@ Check at minimum:
 - Small mobile: 360px
 
 Use existing project breakpoints when available.
+
+## Verify in a real browser, not by reading CSS
+
+Reasoning about a stylesheet finds some problems. Loading the page and looking at it finds the ones that actually reach a user - a table that overflows only once the data is real, a control pushed off-screen at 360px, a camera preview that pushes the capture button below the fold.
+
+If Chrome browser tools are available to you:
+
+1. Check whether the dev server is already running before starting one (`npm run dev` from `frontend/`, default `http://localhost:5173`).
+2. Log in as the role that owns the page - an admin cannot see the faculty attendance screen, and every route is behind `ProtectedRoute`. Ask for credentials rather than inventing them; do not create accounts.
+3. Resize to each target width, screenshot, and look.
+4. After fixing, re-check at the widths that were broken.
+5. Read the browser console. A layout that depends on a component that is erroring is not a layout problem.
+
+If the browser is unavailable, or the page needs data that does not exist, say so plainly in your report and fall back to reading the CSS. **Do not claim a width was verified visually when it was not.**
+
+Note that `index.css` currently carries very few media queries: absence of a breakpoint is not evidence that a page is fine at that width.
 
 ## Review Process
 
@@ -88,3 +112,8 @@ Use existing project breakpoints when available.
 - Do not fix backend issues.
 - Do not make changes merely for the sake of making changes.
 - Prioritize usability and accessibility.
+- All styling lives in the single shared `frontend/src/index.css`. Prefer page-scoped selectors, and if you must change a shared rule, name every other page it affects in your report.
+- Use the design tokens at the top of that file. Never write a raw colour value in a rule - it cannot follow the dark palette.
+- Add no dependencies. The frontend runs on react, react-dom, and react-router-dom only.
+- Never distinguish present from absent by colour alone; the existing solid/hollow marks and text percentages must survive any layout change.
+- Run `npx vite build` from `frontend/` before reporting, to confirm nothing broke.
