@@ -1,22 +1,19 @@
 import { Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import AppShell from '../components/layout/AppShell'
+import { navigationFor } from '../navigation'
 
 function AdminPortal() {
-  const { user, logout } = useAuth()
-
   return (
-    <div>
-      <h1>Admin Portal</h1>
-      <p>Welcome, {user?.name}</p>
-      <nav>
-        <Link to="/admin/academics">Manage academic hierarchy</Link>
-        {' · '}
-        <Link to="/admin/users">Manage users</Link>
-        {' · '}
-        <Link to="/admin/face-enrollment">Face enrollment</Link>
-      </nav>
-      <button onClick={logout}>Logout</button>
-    </div>
+    <AppShell title="Admin Portal">
+      <ul className="portal-links">
+        {navigationFor('admin').map((item) => (
+          <li className="portal-link" key={item.to}>
+            <Link to={item.to}>{item.label}</Link>
+            <p>{item.description}</p>
+          </li>
+        ))}
+      </ul>
+    </AppShell>
   )
 }
 

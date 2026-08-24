@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   getAttendanceSession,
   listAssignedClasses,
   recognizeAttendance,
   saveAttendance,
 } from '../../api/attendance'
+import AppShell from '../../components/layout/AppShell'
 import ClassroomCapture from '../../components/faculty/ClassroomCapture'
 import StudentStatusRow from '../../components/faculty/StudentStatusRow'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
@@ -180,13 +180,7 @@ function AttendanceCapture() {
   const selectedClass = classes.find((item) => item.id === classId)
 
   return (
-    <div>
-      <h1>Take Attendance</h1>
-      <p>
-        <Link to="/faculty">← Back to Faculty Dashboard</Link>
-        {' · '}
-        <Link to="/faculty/attendance/history">View attendance history</Link>
-      </p>
+    <AppShell title="Take Attendance">
       <p className="hierarchy-hint">
         Capture the room, then review what was recognised before saving. Face recognition
         is an aid, not a verdict — the list you save is your own record of who attended,
@@ -401,7 +395,7 @@ function AttendanceCapture() {
         }}
         onCancel={() => setReplacePrompt(false)}
       />
-    </div>
+    </AppShell>
   )
 }
 

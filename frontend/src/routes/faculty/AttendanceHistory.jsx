@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   deleteAttendanceSession,
   getAttendanceSessionById,
@@ -7,6 +6,7 @@ import {
   listAttendanceSessions,
   updateAttendanceSession,
 } from '../../api/attendance'
+import AppShell from '../../components/layout/AppShell'
 import StudentStatusRow from '../../components/faculty/StudentStatusRow'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
 import { describeClass, today } from '../../utils/lecture'
@@ -207,13 +207,7 @@ function AttendanceHistory() {
   const shown = sessions.length
 
   return (
-    <div>
-      <h1>Attendance History</h1>
-      <p>
-        <Link to="/faculty">← Back to Faculty Dashboard</Link>
-        {' · '}
-        <Link to="/faculty/attendance">Take attendance</Link>
-      </p>
+    <AppShell title="Attendance History">
       <p className="hierarchy-hint">
         What has been recorded for your classes. Open a lecture to correct who was marked
         present — a correction replaces what was recorded and is attributed to you.
@@ -404,7 +398,7 @@ function AttendanceHistory() {
         onConfirm={remove}
         onCancel={() => setDeletePrompt(false)}
       />
-    </div>
+    </AppShell>
   )
 }
 

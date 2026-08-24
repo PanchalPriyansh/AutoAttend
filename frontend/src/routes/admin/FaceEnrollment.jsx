@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { classes, courses, departments, institutes, semesters } from '../../api/academic'
 import {
   deleteFaceEncoding,
@@ -7,6 +6,7 @@ import {
   listStudentFaceEncodings,
   registerFaceEncoding,
 } from '../../api/faces'
+import AppShell from '../../components/layout/AppShell'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
 import FaceCapture from '../../components/admin/FaceCapture'
 
@@ -193,11 +193,7 @@ function FaceEnrollment() {
   const unenrolled = roster.filter((row) => row.sample_count === 0).length
 
   return (
-    <div>
-      <h1>Face Enrollment</h1>
-      <p>
-        <Link to="/admin">← Back to Admin Portal</Link>
-      </p>
+    <AppShell title="Face Enrollment">
       <p className="hierarchy-hint">
         Register each student&apos;s face so attendance can recognise them later. Photos are
         never stored — only the numeric encoding derived from them. A student with no
@@ -351,7 +347,7 @@ function FaceEnrollment() {
         onConfirm={handleDelete}
         onCancel={() => setPendingDeletion(null)}
       />
-    </div>
+    </AppShell>
   )
 }
 

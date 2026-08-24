@@ -1,41 +1,19 @@
 import { Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import AppShell from '../components/layout/AppShell'
+import { navigationFor } from '../navigation'
 
 function FacultyDashboard() {
-  const { user, logout } = useAuth()
-
   return (
-    <div>
-      <h1>Faculty Dashboard</h1>
-      <p>Welcome, {user?.name}</p>
-
-      <ul className="hierarchy-items">
-        <li>
-          <span className="user-identity">
-            <span className="user-name">
-              <Link to="/faculty/attendance">Take Attendance</Link>
-            </span>
-            <span className="hierarchy-hint">
-              Capture a class photo or video, review who was recognised, and save the
-              register.
-            </span>
-          </span>
-        </li>
-        <li>
-          <span className="user-identity">
-            <span className="user-name">
-              <Link to="/faculty/attendance/history">Attendance History</Link>
-            </span>
-            <span className="hierarchy-hint">
-              Review what has been recorded for your classes, correct a lecture that was
-              marked wrongly, or delete one that should not have been saved.
-            </span>
-          </span>
-        </li>
+    <AppShell title="Faculty Dashboard">
+      <ul className="portal-links">
+        {navigationFor('faculty').map((item) => (
+          <li className="portal-link" key={item.to}>
+            <Link to={item.to}>{item.label}</Link>
+            <p>{item.description}</p>
+          </li>
+        ))}
       </ul>
-
-      <button onClick={logout}>Logout</button>
-    </div>
+    </AppShell>
   )
 }
 

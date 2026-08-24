@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { classes, courses, departments, institutes, semesters } from '../../api/academic'
+import AppShell from '../../components/layout/AppShell'
 import ClassAssignment from '../../components/admin/ClassAssignment'
 import HierarchyLevel from '../../components/admin/HierarchyLevel'
 
@@ -141,11 +141,7 @@ function AcademicHierarchy() {
   const selectedClass = classLevel.items.find((item) => item.id === selection.class)
 
   return (
-    <div>
-      <h1>Academic Hierarchy</h1>
-      <p>
-        <Link to="/admin">← Back to Admin Portal</Link>
-      </p>
+    <AppShell title="Academic Hierarchy">
       <p className="hierarchy-hint">
         Institute → Department → Semester → Course → Class. Select an item to manage the level
         beneath it.
@@ -238,7 +234,7 @@ function AcademicHierarchy() {
           onClassChanged={classLevel.refresh}
         />
       )}
-    </div>
+    </AppShell>
   )
 }
 
