@@ -52,7 +52,13 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --text-muted: #7b8291;
+    /* Lightened from #7b8291, which cleared 4.5:1 against --bg (4.64) but
+       not against --surface (4.21) -- so it was safe only for as long as
+       nothing put muted text on a card. This value clears both (5.37 on
+       --bg, 4.88 on --surface) and still reads dimmer than --text, which
+       is 6.40 on the same surface. Light mode already passed both (5.21
+       and 4.80) and is unchanged. */
+    --text-muted: #868d9c;
     --bg: #16171d;
     --surface: #1e2028;
     --border: #333642;
@@ -86,6 +92,195 @@ body {
 h1 {
   color: var(--text-h);
   font-weight: 500;
+}
+
+/* --- Login (signed out -- this page renders no app shell) ----------
+
+   The first screen anyone sees, and the project's landing page: there
+   is no marketing page and no public sign-up. It renders no header,
+   no nav and no logout, so it is laid out as a standalone full-height
+   screen and deliberately shares nothing with .page / .page-title.
+
+   Every rule below is prefixed .auth-. The one shared rule it needs is
+   the #root padding, and that is removed only while this screen is on
+   screen. */
+
+/* #root pads every page by 32px, which would inset a screen meant to
+   fill the viewport. Scoped with :has() so the ten shelled pages and
+   NotFound keep their padding; where :has() is unsupported the screen
+   simply keeps the 32px inset and still centres correctly. */
+#root:has(.auth-screen) {
+  padding: 0;
+}
+
+/* The gutters go through max() against the safe-area insets: this screen
+   fills the viewport, so on a notched phone held sideways the card would
+   otherwise sit under the cutout. Where the insets are 0 -- every desktop
+   browser -- these resolve to the plain 32/16 values. */
+.auth-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 100svh;
+  padding: max(32px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+/* Raised off the page in both palettes: --surface sits darker than --bg
+   in light and lighter than it in dark, which is the direction each
+   theme reads as elevated. The inputs then fall back to --bg, so they
+   stay distinct from the card either way. */
+.auth-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.auth-brand {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-title {
+  margin: 4px 0 24px;
+  font-size: 1.6rem;
+  line-height: 1.2;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-field label {
+  color: var(--text-h);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* font: inherit drops the browser's own small form font; 1rem holds the
+   value at the base size, which is also what stops iOS zooming on focus. */
+.auth-field input {
+  font: inherit;
+  font-size: 1rem;
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.auth-field input:hover {
+  border-color: var(--text-muted);
+}
+
+/* Somebody may fill this whole form from the keyboard, so the ring is
+   never removed -- only made consistent across both fields and button. */
+.auth-screen :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --bg is the right foreground on --accent in both palettes: #fff on
+   #4c3fb5 is 7.8:1 in light, #16171d on #a5b4fc is 9.0:1 in dark. */
+.auth-submit {
+  font: inherit;
+  font-weight: 500;
+  margin-top: 8px;
+  padding: 12px 16px;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  /* Drops the ~300ms tap delay mobile browsers add while they wait to see
+     whether a tap is a double-tap zoom. */
+  touch-action: manipulation;
+  transition: background-color 120ms ease;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* The button is only ever disabled while the request is in flight, and
+   its label says "Logging in..." at the same time -- the dimming agrees
+   with the wording rather than carrying the state on its own. */
+.auth-submit:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+/* A bordered callout with a marked glyph, not a run of red text: the
+   shape and the sentence both carry the failure before the colour does.
+
+   The message is whatever the server (or the browser) hands back, so it
+   can contain an unbroken token -- a URL, a long address -- longer than
+   the callout. `anywhere` rather than `break-word` because only the
+   former also shrinks the text's min-content width: the message is an
+   anonymous flex item beside the glyph, and without that it refuses to
+   shrink and pushes a horizontal scrollbar onto the whole page. Measured
+   at 360px: an unbroken 90-character message took the document to 457px
+   against a 345px client width before this line. */
+.auth-error {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  background: var(--danger-weak);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.auth-error-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--danger-weak);
+  background: var(--danger);
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* Why there is no sign-up link. Without this the page looks unfinished
+   to anyone who arrives without an account. */
+.auth-note {
+  margin: 24px 0 0;
+  padding-top: 16px;
+  color: var(--text);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-submit {
+    transition: none;
+  }
 }
 
 /* --- App shell (temporary styling) ---------------------------------
