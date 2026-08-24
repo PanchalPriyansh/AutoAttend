@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { getMyAttendance, getMyClassAttendance } from '../../api/attendance'
+import AppShell from '../../components/layout/AppShell'
 import AttendanceBar from '../../components/student/AttendanceBar'
 import AttendanceTrend from '../../components/student/AttendanceTrend'
 import LectureStrip from '../../components/student/LectureStrip'
@@ -101,15 +101,16 @@ function AttendanceOverview() {
     setDetailError('')
   }
 
-  if (loading) return <p>Loading your attendance…</p>
+  if (loading) {
+    return (
+      <AppShell title="My Attendance">
+        <p>Loading your attendance…</p>
+      </AppShell>
+    )
+  }
 
   return (
-    <div>
-      <h1>My Attendance</h1>
-      <p className="hierarchy-hint">
-        <Link to="/student">Back to dashboard</Link>
-      </p>
-
+    <AppShell title="My Attendance">
       {error ? <p className="hierarchy-error">{error}</p> : null}
 
       {overview && !error ? (
@@ -248,7 +249,7 @@ function AttendanceOverview() {
           ) : null}
         </section>
       ) : null}
-    </div>
+    </AppShell>
   )
 }
 

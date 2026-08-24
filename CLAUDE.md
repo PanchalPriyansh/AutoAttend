@@ -257,15 +257,28 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 | ML prediction | **Cancelled — not part of this project.** No model, no training, no `scikit-learn`, and no marks/grades/assessment data to train on. Do not propose or build it. |
 | Notifications | Implemented — `flask notify-low-attendance` emails students whose recorded attendance is below `LOW_ATTENDANCE_THRESHOLD` (default 75) in a class they are still enrolled in. **CLI-only by design: no route, no blueprint, no React screen**, so nothing on a request path can send mail; `test_app_factory.py` still asserts no route contains `notification`. The bar is applied **per class**, never to an overall average, and to the same rounded figure `GET /api/attendance/me` shows — a class under `MIN_RECORDED_LECTURES` (5, a constant in `notifications/service.py`) is skipped so nobody is mailed "0%" after one lecture. One email per student lists every class they are short in; it is plain text with no HTML part and no link, carries only that student's own figures, and states a recorded percentage against a configured bar — never a consequence, a prediction, or a risk score. Sends are recorded one row per class in `attendance_notifications`, which is what `NOTIFICATION_COOLDOWN_DAYS` (default 7) reads to avoid mailing the same student about the same class twice; the index is deliberately non-unique so a still-short student can be warned again later. **Send first, then record** — a failed send writes nothing and is retried next run, and one bad address never stops the sweep. `--dry-run` lists recipients while opening no SMTP connection and writing nothing. No new dependency: stdlib `smtplib`/`email`, confined to `notifications/mailer.py`. Deferred: no admin trigger or admin-set threshold (an optional later spec), the bar is global rather than per-institute or per-course, there is no HTML mail, no unsubscribe, no per-run audit beyond the sent rows, and the sweep runs synchronously in one process. |
 
+| App shell | Implemented — `AppShell.jsx` is the root of all ten signed-in pages, providing the skip link, the `<header>` (brand, role nav, user name, logout), the `<main id="main">` landmark, and the page's single `<h1>` from its `title` prop. `NavBar.jsx` marks the current route via `NavLink` (which sets `aria-current="page"` itself), with `end` on every link so the two nested faculty routes cannot both claim to be current. `src/navigation.js` is the **only** place any role's link list is written — the header nav and the three landing pages both read it, so they cannot disagree. Role filtering there decides what is *shown*, never what is allowed: `ProtectedRoute` and `@role_required` are untouched. Removed ten copies of `<h1>`/`Welcome, …`/logout and six hand-rolled back links. `Login.jsx` and `NotFound.jsx` are reachable while signed out, render no shell, and were not touched. **The CSS is deliberately temporary** — marked as such in `index.css`, and expected to be replaced by the per-page design groups. Deferred on purpose: no component vocabulary yet (no `.btn`, `.card`, `.input`, `.table`, or spacing/radius scale), to be extracted later from pages that have actually been designed; no responsive pass; no collapsible nav; no manual theme toggle; no breadcrumbs, tabs, or global search. |
+
 **Do not implement an unfinished feature unless the active task explicitly targets it.**
 
 Update this section when major features become implemented.
 
 ### Next planned feature
 
-Specs `01`–`11` are built, so every core capability this file describes now exists, including the attendance bar being visible on the student's own dashboard (`11-student-attendance-threshold`). There is no agreed next spec.
+Specs `01`–`12` are built. Every core capability this file describes exists, and `12-app-shell` added the frame the UI work sits inside.
 
-What remains is only the deferred items already recorded per feature above, none of them scheduled:
+**The current styling is scaffolding.** It is being replaced page by page through `/frontend-maker`, in small related groups, in this order:
+
+1. **Login** — `/login`. On its own: it renders no shell, so nothing blocks it.
+2. **Student** — `/student` + `/student/attendance`.
+3. **Faculty** — `/faculty` + `/faculty/attendance` + `/faculty/attendance/history`.
+4. **Admin** — `/admin` + `/admin/academics` + `/admin/users` + `/admin/face-enrollment`.
+
+One group at a time, each finished before the next starts. `/frontend-maker` takes one page per invocation, so a group is run page by page.
+
+After two or three groups are done, extract the shared component vocabulary (`.btn`, `.card`, `.input`, `.table`, `.alert`, spacing and radius scales) from what those pages actually turned out to need. That extraction is its own spec and was deliberately **not** done up front — designing a vocabulary before any page has been designed is guessing.
+
+Beyond that, what remains is only the deferred items already recorded per feature above, none of them scheduled:
 
 - An admin trigger with an admin-set threshold for notifications — the alternative `11` considered and did not choose, since it needs a new blueprint, an admin route, and the threshold moving to MongoDB, and it would undo the deliberately-kept `"notification"` route guard.
 - A faculty/admin view of a *named* student's attendance — deliberately ruled out as a "small" feature: `09` built things so that **no endpoint anywhere takes a student id**, and undoing that is a security decision, not a finishing touch.

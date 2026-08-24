@@ -21,6 +21,23 @@ So:
 - Never silently restyle a page you were not asked to touch. A change that improves the faculty screen and quietly degrades the admin screen is a failure, however good the faculty screen looks.
 - Add new rules in the file's existing section structure, under the comment banner for that screen. Create a new banner if the page has none.
 
+## The page is inside a shell. Do not build a second one.
+
+Every signed-in page renders `frontend/src/components/layout/AppShell.jsx` as its root. The shell already provides:
+
+- the skip link, the `<header>`, the role's `<nav>` (`NavBar.jsx`, fed by `src/navigation.js`), the signed-in person's name, and the logout control;
+- the `<main id="main" class="page">` landmark;
+- the page's single `<h1 class="page-title">`, from the shell's `title` prop.
+
+So:
+
+- **Never add a header, a nav, a page title, or a logout button to a page.** They are already there, one level up.
+- **Never add a second `<h1>`.** Section headings inside a page start at `<h2>`.
+- The shell's own styling (`.app-header`, `.app-nav`, `.skip-link`, `.page`, `.page-title`, `.portal-links`) is marked **temporary** in `index.css` and is meant to be replaced. You may restyle it — but it is shared by all ten signed-in pages, so treat it as a shared-rule change: say so in your report and name the pages it affects.
+- `Login.jsx` and `NotFound.jsx` are reachable while signed out and render **no** shell. They are the exception; style them as standalone pages.
+
+There is deliberately **no component vocabulary yet** — no `.btn`, `.card`, `.input`, `.table`, `.alert`, and no spacing or radius scale. That was left out on purpose, to be extracted later from pages that have actually been designed rather than guessed at up front. Until then, write page-scoped rules as this file already tells you to. If you find yourself wanting a shared `.btn`, that is evidence for the extraction, not permission to start it: note it in your report.
+
 ## Design tokens are the palette. All of it.
 
 The token block at the top of `index.css` defines every colour this project uses, in light and dark. Both palettes are contrast-checked; every foreground/background pair in use clears 4.5:1.

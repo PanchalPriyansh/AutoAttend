@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { institutes as institutesApi } from '../../api/academic'
 import {
   createUser,
@@ -8,6 +7,7 @@ import {
   setUserStatus,
   updateUser,
 } from '../../api/users'
+import AppShell from '../../components/layout/AppShell'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
 import UserForm from '../../components/admin/UserForm'
 import { useAuth } from '../../context/AuthContext'
@@ -153,11 +153,7 @@ function UserManagement() {
   }
 
   return (
-    <div>
-      <h1>Users</h1>
-      <p>
-        <Link to="/admin">← Back to Admin Portal</Link>
-      </p>
+    <AppShell title="Users">
       <p className="hierarchy-hint">
         Accounts are created here — there is no public sign-up. Accounts are deactivated rather
         than deleted, so a user’s enrollment and attendance history stays intact.
@@ -350,7 +346,7 @@ function UserManagement() {
           onCancel={() => setPendingDeactivation(null)}
         />
       </section>
-    </div>
+    </AppShell>
   )
 }
 
