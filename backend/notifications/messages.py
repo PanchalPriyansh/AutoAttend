@@ -35,7 +35,7 @@ def format_percentage(value):
 
     Trailing ".0" is dropped so a threshold of 75 reads as "75%" rather
     than "75.0%", while a real 62.5 keeps its half. The rounding itself
-    happens upstream (attendance/serializers.py::attendance_percentage) so
+    happens upstream (attendance/threshold.py::attendance_percentage) so
     that the figure emailed and the figure on screen are the same number,
     not two roundings of one.
     """

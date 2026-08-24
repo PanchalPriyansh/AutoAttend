@@ -4,6 +4,7 @@ import { getMyAttendance, getMyClassAttendance } from '../../api/attendance'
 import AttendanceBar from '../../components/student/AttendanceBar'
 import AttendanceTrend from '../../components/student/AttendanceTrend'
 import LectureStrip from '../../components/student/LectureStrip'
+import ThresholdNote from '../../components/student/ThresholdNote'
 import { describeClass } from '../../utils/lecture'
 
 /**
@@ -150,6 +151,12 @@ function AttendanceOverview() {
                         percentage={item.percentage}
                         presentCount={item.present_count}
                         totalCount={item.total_count}
+                        threshold={overview.threshold}
+                      />
+                      <ThresholdNote
+                        threshold={overview.threshold}
+                        meetsThreshold={item.meets_threshold}
+                        lecturesToReach={item.lectures_to_reach}
                       />
                     </span>
 
@@ -204,6 +211,12 @@ function AttendanceOverview() {
                 percentage={detail.percentage}
                 presentCount={detail.present_count}
                 totalCount={detail.total_count}
+                threshold={detail.threshold}
+              />
+              <ThresholdNote
+                threshold={detail.threshold}
+                meetsThreshold={detail.meets_threshold}
+                lecturesToReach={detail.lectures_to_reach}
               />
 
               {detail.total_count === 0 ? (

@@ -29,3 +29,21 @@ export function today() {
 export function describeClass(item) {
   return [item.course, item.name].filter(Boolean).join(' — ')
 }
+
+/**
+ * A percentage as a person writes it: a bar of 75.0 reads "75", while a real
+ * 62.5 keeps its half — the same spelling the low-attendance email uses, so a
+ * student reads one figure written one way in both places.
+ *
+ * JSON's 75.0 arrives here as the JavaScript number 75, which already prints
+ * without its trailing zero; there is nothing to strip. What this exists for
+ * is to put that assumption in one place, and to keep a null or a stray
+ * non-number from reaching the page as "null%".
+ *
+ * The rounding itself happened in the backend
+ * (attendance/threshold.py::attendance_percentage), so callers must never
+ * round again here — a second rounding is a second source of truth.
+ */
+export function formatPercentage(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
+}

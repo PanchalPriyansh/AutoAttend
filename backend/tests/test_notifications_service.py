@@ -8,7 +8,7 @@ Selection (`find_low_attendance`):
   - Below-threshold selection is per class, never an overall average
     (rule 3); membership is strict `<` (rule 8); the denominator is the
     student's own records in that class (rule 4, matching
-    attendance/serializers.py::attendance_percentage exactly); only still
+    attendance/threshold.py::attendance_percentage exactly); only still
     -enrolled pairs qualify (rule 5); only active students with a
     non-empty email are notified (rule 6); a class under
     `MIN_RECORDED_LECTURES` is skipped even at 0% (rule 7).
@@ -46,7 +46,7 @@ import pytest
 from bson import ObjectId
 
 from academic_test_helpers import make_class_enrollment
-from attendance.serializers import attendance_percentage
+from attendance.threshold import attendance_percentage
 from notifications.errors import MailerSendError
 from notifications.service import (
     MIN_RECORDED_LECTURES,

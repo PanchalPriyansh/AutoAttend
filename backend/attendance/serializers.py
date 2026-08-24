@@ -11,6 +11,11 @@ anything but the matched student, and nothing derived from the captured
 image or video beyond the counts the reviewer needs.
 """
 
+from attendance.threshold import (
+    attendance_percentage,
+    lectures_to_reach,
+    meets_threshold,
+)
 from common.serializers import as_utc, student_summary, to_json_value
 
 # The stored `date` is a timestamp at UTC midnight, but it means a
@@ -187,25 +192,6 @@ def serialize_session_summaries(entries):
 # removed is one careless edit away from carrying them again.
 
 
-def attendance_percentage(present, total):
-    """A student's attendance as a percentage, or None when nothing has
-    been recorded yet.
-
-    None rather than 0 is the whole point of this helper existing. A class
-    where no lecture has been taken is not a class the student has missed
-    everything in, and 0% tells them the exact opposite of the truth. One
-    definition, used by the per-class, overall, and monthly figures alike,
-    so the empty case cannot be handled three different ways.
-
-    Never stored. The moment a faculty member corrects or deletes a
-    session, a stored percentage is wrong and nothing knows it.
-    """
-    if not total:
-        return None
-
-    return round(present / total * 100, 1)
-
-
 def _standing(counts):
     """The four numbers that describe attendance at any scope: one class,
     everything, or a single month.
@@ -236,20 +222,56 @@ def _class_identity(document, context):
     }
 
 
-def serialize_student_overview(entries, overall):
+def _comparison(counts, threshold):
+    """How one class stands against the bar.
+
+    Deliberately separate from `_standing`, and applied at one scope only.
+    `_standing` is shared by the per-class, overall, and monthly figures;
+    the bar belongs to none of the other two. An average hides the class a
+    student is actually short in -- 85% overall can contain a class at 55%
+    -- and a month is not a window anybody is assessed on. Applying it per
+    class is also what the sweep does, so the screen and the email cannot
+    reach different verdicts about the same student.
+
+    Both fields are None together: None is not False, and a class with
+    nothing recorded has not failed to meet the requirement.
+    """
+    present = counts.get("present", 0)
+    total = counts.get("total", 0)
+
+    return {
+        "meets_threshold": meets_threshold(
+            attendance_percentage(present, total), threshold
+        ),
+        "lectures_to_reach": lectures_to_reach(present, total, threshold),
+    }
+
+
+def serialize_student_overview(entries, overall, threshold):
     """`entries` is a list of (class_document, context, counts) triples
     from attendance.summary.class_attendance_overview.
+
+    `threshold` is the configured bar, or None when it is unusable -- in
+    which case every class reports None for both comparison fields and the
+    screen falls back to showing attendance alone.
     """
     return {
+        "threshold": threshold,
         "classes": [
-            {**_class_identity(document, context), **_standing(counts)}
+            {
+                **_class_identity(document, context),
+                **_standing(counts),
+                **_comparison(counts, threshold),
+            }
             for document, context, counts in entries
         ],
         "overall": _standing(overall),
     }
 
 
-def serialize_student_class_attendance(document, context, counts, monthly, lectures):
+def serialize_student_class_attendance(
+    document, context, counts, monthly, lectures, threshold
+):
     """One class in detail, for the student it describes.
 
     `monthly` stays oldest-first and `lectures` newest-first, exactly as
@@ -262,10 +284,16 @@ def serialize_student_class_attendance(document, context, counts, monthly, lectu
     recognition performs, and the stored status is the faculty member's
     statement either way, so showing a student "a camera decided this"
     would misrepresent both what happened and who is answerable for it.
+
+    The bar applies to the class and not to any bucket inside it: a month
+    is not a window a student is assessed on, so `monthly` carries the
+    same four figures it always did and no comparison.
     """
     return {
         "class": _class_identity(document, context),
+        "threshold": threshold,
         **_standing(counts),
+        **_comparison(counts, threshold),
         "monthly": [
             {"month": bucket["month"], **_standing(bucket)} for bucket in monthly
         ],

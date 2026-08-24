@@ -340,6 +340,7 @@ h1 {
 }
 
 .attendance-bar-track {
+  position: relative; /* the positioning context the marker below needs */
   height: 10px;
   margin-top: 6px;
   border: 1px solid var(--border);
@@ -356,6 +357,40 @@ h1 {
 .attendance-bar-fill {
   height: 100%;
   background: var(--accent);
+}
+
+/* The attendance the student is required to have, marked across the bar.
+   Centred on its offset so a bar of 100 still reads as a mark at the end
+   rather than disappearing under the track's overflow clip. Drawn over the
+   fill, so it stays visible on a class that has cleared it. */
+.attendance-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--text-h);
+}
+
+.threshold-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.8rem;
+}
+
+/* Met and below are distinguished by their words first — the colour only
+   agrees with what the sentence already says. */
+.threshold-standing--met {
+  color: var(--success);
+}
+
+.threshold-standing--below {
+  color: var(--warning);
+}
+
+.threshold-catch-up {
+  color: var(--text-muted);
 }
 
 .trend {

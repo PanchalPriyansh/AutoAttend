@@ -49,6 +49,7 @@ from attendance.service import (
     update_session_records,
 )
 from attendance.summary import class_attendance_overview, student_class_attendance
+from attendance.threshold import current_threshold
 from attendance.validators import (
     parse_attendance_date,
     parse_date_range,
@@ -284,7 +285,10 @@ def delete_attendance_session(session_id):
 @role_required("student")
 def get_my_attendance():
     entries, overall = class_attendance_overview(get_db(), _acting_user_id())
-    return jsonify(serialize_student_overview(entries, overall)), 200
+    return (
+        jsonify(serialize_student_overview(entries, overall, current_threshold())),
+        200,
+    )
 
 
 @attendance_bp.route("/attendance/me/sessions", methods=["GET"])
@@ -299,7 +303,7 @@ def get_my_class_attendance():
     return (
         jsonify(
             serialize_student_class_attendance(
-                document, context, counts, monthly, lectures
+                document, context, counts, monthly, lectures, current_threshold()
             )
         ),
         200,
