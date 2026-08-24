@@ -1,0 +1,145 @@
+/* --- App shell (temporary styling) ---------------------------------
+
+   Scaffolding, not a design. Every page's real styling is being done
+   one group at a time through /frontend-maker, and this frame is
+   expected to be replaced when the groups reach it.
+
+   So keep it short. It exists so the header, the nav, and the current
+   page are legible in the meantime -- not to establish a look, and not
+   to become a component vocabulary. There is deliberately no .btn,
+   .card, .input, or spacing scale here: those should be extracted from
+   pages that have actually been designed, not guessed at up front. */
+
+/* Hidden by .visually-hidden (further down, and reused rather than
+   duplicated) until focused; this undoes that hiding and puts the link
+   over the header. */
+.skip-link:focus {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  clip-path: none;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-brand {
+  color: var(--text-h);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.app-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-nav a {
+  color: var(--text);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.app-nav a:hover {
+  color: var(--text-h);
+}
+
+/* The current page is underlined as well as recoloured -- colour alone
+   would leave it unmarked for anyone who cannot distinguish it. */
+.app-nav a.is-current {
+  color: var(--text-h);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.app-user {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.app-logout {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.skip-link:focus-visible,
+.app-brand:focus-visible,
+.app-nav a:focus-visible,
+.app-logout:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* The skip link's target. Focused programmatically and never tabbed to,
+   so a ring here would only ever appear where it is not wanted. */
+.page:focus {
+  outline: none;
+}
+
+.page-title {
+  margin-top: 0;
+}
+
+/* The landing pages' list of destinations, rendered from navigation.js.
+   Scoped to those three pages; not a general-purpose card. */
+.portal-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.portal-link a {
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.portal-link p {
+  margin: 0;
+  font-size: 0.85rem;
+}

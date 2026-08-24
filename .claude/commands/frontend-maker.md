@@ -44,7 +44,7 @@ Invoke the **autoattend-css-designer** agent with:
 
 - The page name, route, entry file, and the components it renders
 - An instruction to load the `frontend-design` skill first
-- A reminder that all styling shares `frontend/src/index.css`, so page-scoped selectors are preferred and any shared-rule change must be reported with the pages it affects
+- A reminder that styling is split across `frontend/src/styles/` with `index.css` as the `@import` manifest, that it is still one global namespace so page-scoped selectors are preferred, that any shared-rule change must be reported with the pages it affects, and that the page's rules should be carved out of `scaffolding.css` into `styles/<page>.css`
 - A reminder that colours come from the design tokens only, and that behaviour must not change
 
 Wait for it to finish.

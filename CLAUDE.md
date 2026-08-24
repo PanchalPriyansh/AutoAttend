@@ -100,6 +100,25 @@ Follow the actual project structure once these responsibilities are organized in
 - Avoid unnecessary duplication and overly complex abstractions
 - Keep academic data database-driven where required
 
+### Stylesheets
+
+`frontend/src/index.css` is an `@import` manifest and holds no rules. The rules live in `frontend/src/styles/`, and the manifest's order **is** the cascade — Vite inlines the files into one stylesheet at build, so this is still a single global namespace with no CSS modules.
+
+```text id="c5s9ty"
+frontend/src/index.css        the @import manifest -- order IS the cascade
+frontend/src/styles/
+  tokens.css                  the palette, light and dark
+  base.css                    element defaults + .visually-hidden
+  login.css                   .auth-*
+  shell.css                   .app-*, .page*, .portal-*  (temporary)
+  scaffolding.css             every page not yet redesigned
+```
+
+- **`scaffolding.css` is temporary and should only ever shrink.** It holds the styling written while the features were being built. Its class names do not partition by page — `.hierarchy-*` alone is used by twelve files across admin, faculty and student — which is why it is one file rather than several. Each `/frontend-maker` group carves its pages out of it into `styles/<page>.css`. When it is empty, the redesign is finished.
+- **A new page file goes into the manifest before `scaffolding.css`**, so a leftover scaffolding rule cannot win over a finished design.
+- **Only `tokens.css` and `base.css` are read by everyone.** Do not add to either to solve one page's problem.
+- **Never write a raw colour outside `tokens.css`** — it cannot follow the dark palette, and nothing catches it until someone switches theme.
+
 ---
 
 ## Tech constraints
@@ -257,7 +276,7 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 | ML prediction | **Cancelled — not part of this project.** No model, no training, no `scikit-learn`, and no marks/grades/assessment data to train on. Do not propose or build it. |
 | Notifications | Implemented — `flask notify-low-attendance` emails students whose recorded attendance is below `LOW_ATTENDANCE_THRESHOLD` (default 75) in a class they are still enrolled in. **CLI-only by design: no route, no blueprint, no React screen**, so nothing on a request path can send mail; `test_app_factory.py` still asserts no route contains `notification`. The bar is applied **per class**, never to an overall average, and to the same rounded figure `GET /api/attendance/me` shows — a class under `MIN_RECORDED_LECTURES` (5, a constant in `notifications/service.py`) is skipped so nobody is mailed "0%" after one lecture. One email per student lists every class they are short in; it is plain text with no HTML part and no link, carries only that student's own figures, and states a recorded percentage against a configured bar — never a consequence, a prediction, or a risk score. Sends are recorded one row per class in `attendance_notifications`, which is what `NOTIFICATION_COOLDOWN_DAYS` (default 7) reads to avoid mailing the same student about the same class twice; the index is deliberately non-unique so a still-short student can be warned again later. **Send first, then record** — a failed send writes nothing and is retried next run, and one bad address never stops the sweep. `--dry-run` lists recipients while opening no SMTP connection and writing nothing. No new dependency: stdlib `smtplib`/`email`, confined to `notifications/mailer.py`. Deferred: no admin trigger or admin-set threshold (an optional later spec), the bar is global rather than per-institute or per-course, there is no HTML mail, no unsubscribe, no per-run audit beyond the sent rows, and the sweep runs synchronously in one process. |
 
-| App shell | Implemented — `AppShell.jsx` is the root of all ten signed-in pages, providing the skip link, the `<header>` (brand, role nav, user name, logout), the `<main id="main">` landmark, and the page's single `<h1>` from its `title` prop. `NavBar.jsx` marks the current route via `NavLink` (which sets `aria-current="page"` itself), with `end` on every link so the two nested faculty routes cannot both claim to be current. `src/navigation.js` is the **only** place any role's link list is written — the header nav and the three landing pages both read it, so they cannot disagree. Role filtering there decides what is *shown*, never what is allowed: `ProtectedRoute` and `@role_required` are untouched. Removed ten copies of `<h1>`/`Welcome, …`/logout and six hand-rolled back links. `Login.jsx` and `NotFound.jsx` are reachable while signed out, render no shell, and were not touched. **The CSS is deliberately temporary** — marked as such in `index.css`, and expected to be replaced by the per-page design groups. Deferred on purpose: no component vocabulary yet (no `.btn`, `.card`, `.input`, `.table`, or spacing/radius scale), to be extracted later from pages that have actually been designed; no responsive pass; no collapsible nav; no manual theme toggle; no breadcrumbs, tabs, or global search. |
+| App shell | Implemented — `AppShell.jsx` is the root of all ten signed-in pages, providing the skip link, the `<header>` (brand, role nav, user name, logout), the `<main id="main">` landmark, and the page's single `<h1>` from its `title` prop. `NavBar.jsx` marks the current route via `NavLink` (which sets `aria-current="page"` itself), with `end` on every link so the two nested faculty routes cannot both claim to be current. `src/navigation.js` is the **only** place any role's link list is written — the header nav and the three landing pages both read it, so they cannot disagree. Role filtering there decides what is *shown*, never what is allowed: `ProtectedRoute` and `@role_required` are untouched. Removed ten copies of `<h1>`/`Welcome, …`/logout and six hand-rolled back links. `Login.jsx` and `NotFound.jsx` are reachable while signed out, render no shell, and were not touched. **The CSS is deliberately temporary** — it lives in `styles/shell.css`, is marked as such there, and is expected to be replaced by the per-page design groups. Deferred on purpose: no component vocabulary yet (no `.btn`, `.card`, `.input`, `.table`, or spacing/radius scale), to be extracted later from pages that have actually been designed; no responsive pass; no collapsible nav; no manual theme toggle; no breadcrumbs, tabs, or global search. |
 
 **Do not implement an unfinished feature unless the active task explicitly targets it.**
 

@@ -1,0 +1,79 @@
+/* Design tokens -- the whole palette, in both themes.
+
+   Every colour below is declared here and referenced by name elsewhere --
+   a raw hex in a component rule is a bug, because it cannot follow the
+   dark palette and nothing will notice until somebody switches theme.
+
+   Body text is #5a5364 rather than something lighter so it clears 6:1 on
+   white: the previous value sat close enough to the 4.5:1 floor that it
+   passed at the 18px base size and failed everywhere the UI goes smaller.
+   --text-muted now carries the lighter role it used to serve. */
+:root {
+  --text: #5a5364;
+  --text-h: #08060d;
+  --text-muted: #6f6a7c;
+  --bg: #fff;
+  --surface: #f6f5f8;
+  --border: #ded9e4;
+  --accent: #4c3fb5;
+  --accent-hover: #3d3296;
+  /* Tinted backgrounds -- selected rows, active nav, callouts -- where a
+     full-strength accent would shout. */
+  --accent-weak: #eeecf9;
+  /* Teal-leaning rather than a grass green: it sits beside indigo without
+     clashing, and it is dark enough to be legible as small text on white,
+     which the usual #22c55e is not. */
+  --success: #166a4c;
+  --success-weak: #e6f4ef;
+  /* Dark amber for the same reason -- the conventional #f59e0b fails
+     contrast on white badly enough to be unreadable at label sizes. */
+  --warning: #8a6116;
+  --warning-weak: #fdf3e2;
+  --danger: #b3261e;
+  --danger-weak: #fdecea;
+  --focus: #4c3fb5;
+  --shadow: 0 1px 2px rgb(8 6 13 / 0.04), 0 4px 12px rgb(8 6 13 / 0.06);
+
+  font: 18px/145% system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Only the tokens change here. Every hue is lightened rather than reused
+   -- a colour picked for contrast against white is unreadable on a dark
+   surface, and the "weak" tints have to become dark tints rather than
+   pale ones or they glow. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    /* Lightened from #7b8291, which cleared 4.5:1 against --bg (4.64) but
+       not against --surface (4.21) -- so it was safe only for as long as
+       nothing put muted text on a card. This value clears both (5.37 on
+       --bg, 4.88 on --surface) and still reads dimmer than --text, which
+       is 6.40 on the same surface. Light mode already passed both (5.21
+       and 4.80) and is unchanged. */
+    --text-muted: #868d9c;
+    --bg: #16171d;
+    --surface: #1e2028;
+    --border: #333642;
+    --accent: #a5b4fc;
+    --accent-hover: #c3cdfd;
+    --accent-weak: #232637;
+    --success: #6ee7b7;
+    --success-weak: #16261f;
+    --warning: #fcd34d;
+    --warning-weak: #2a2313;
+    --danger: #f2b8b5;
+    --danger-weak: #2c1a19;
+    --focus: #a5b4fc;
+    /* Elevation reads as a darker well rather than a cast shadow: a
+       black shadow is invisible against a near-black background. */
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
+  }
+}

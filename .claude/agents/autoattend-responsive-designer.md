@@ -88,7 +88,7 @@ If Chrome browser tools are available to you:
 
 If the browser is unavailable, or the page needs data that does not exist, say so plainly in your report and fall back to reading the CSS. **Do not claim a width was verified visually when it was not.**
 
-Note that `index.css` currently carries very few media queries: absence of a breakpoint is not evidence that a page is fine at that width.
+Note that the stylesheets currently carry very few media queries: absence of a breakpoint is not evidence that a page is fine at that width.
 
 ## Review Process
 
@@ -112,7 +112,7 @@ Note that `index.css` currently carries very few media queries: absence of a bre
 - Do not fix backend issues.
 - Do not make changes merely for the sake of making changes.
 - Prioritize usability and accessibility.
-- All styling lives in the single shared `frontend/src/index.css`. Prefer page-scoped selectors, and if you must change a shared rule, name every other page it affects in your report.
+- Styling is split across `frontend/src/styles/` (`tokens`, `base`, `login`, `shell`, `scaffolding`), with `frontend/src/index.css` as the `@import` manifest that declares cascade order. It is still one global namespace, so prefer page-scoped selectors, and if you must change a shared rule, name every other page it affects in your report.
 - Use the design tokens at the top of that file. Never write a raw colour value in a rule - it cannot follow the dark palette.
 - Add no dependencies. The frontend runs on react, react-dom, and react-router-dom only.
 - Never distinguish present from absent by colour alone; the existing solid/hollow marks and text percentages must survive any layout change.

@@ -1,0 +1,396 @@
+/* Styling written while the features were being built -- temporary.
+
+   These class names do not partition by page: .hierarchy-* is used by
+   twelve files across admin, faculty and student, .user-* by all three
+   roles, .lecture-* by faculty and student. They were never a shared
+   vocabulary; pages simply borrowed whatever already existed. That is
+   why this is one file rather than several, and why splitting it by
+   page would mean duplicating rules.
+
+   Each /frontend-maker group carves its pages out of here into a file
+   of its own. This file should only ever shrink. */
+
+/* --- Academic hierarchy admin screen ------------------------------- */
+
+.hierarchy-level {
+  border-top: 1px solid var(--border);
+  padding: 16px 0;
+}
+
+.hierarchy-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hierarchy-header h2 {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hierarchy-hint {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.hierarchy-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.hierarchy-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px;
+  margin: 12px 0;
+  background: var(--surface);
+  border-radius: 8px;
+}
+
+.hierarchy-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+}
+
+.hierarchy-form label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hierarchy-form input,
+.hierarchy-form select {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.hierarchy-items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hierarchy-items li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.hierarchy-items li.is-selected {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.hierarchy-select {
+  flex: 1 1 auto;
+  text-align: left;
+  color: var(--text-h);
+  background: none;
+  border: none;
+  padding: 4px 0;
+}
+
+.hierarchy-items li.is-selected .hierarchy-select {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.hierarchy-level button,
+.dialog button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hierarchy-level button:disabled,
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hierarchy-level button.danger,
+.dialog button.danger {
+  color: var(--danger);
+}
+
+/* --- User management admin screen --- */
+
+.hierarchy-subheading {
+  margin: 16px 0 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+/* A person's row needs two lines (name, then email/role), unlike a
+   hierarchy row which is a single label. */
+.user-identity {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-name {
+  color: var(--text-h);
+}
+
+/* Deactivated accounts stay visible and are marked, rather than being
+   filtered out of the list -- an admin needs to see them to reactivate. */
+.hierarchy-items li.is-inactive {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.hierarchy-items li.is-inactive .user-name {
+  color: var(--text);
+  text-decoration: line-through;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  max-width: 420px;
+  width: 100%;
+  padding: 24px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.dialog h2 {
+  margin-top: 0;
+  color: var(--text-h);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* Constrains the live camera preview only. Without a width the <video>
+   renders at the camera's native resolution and pushes the capture button
+   off screen. */
+.face-capture-live video {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  margin: 12px 0;
+}
+
+/* --- Student attendance dashboard ---------------------------------- */
+
+/* Present and absent are never distinguished by colour alone anywhere
+   below: every bar carries its percentage as text, and a lecture mark is
+   solid when present and hollow when absent. A red/green-only design is
+   unreadable to a colourblind student, and this is the one screen in the
+   project a student is guaranteed to open. */
+
+.attendance-bar {
+  margin: 8px 0;
+  max-width: 420px;
+}
+
+.attendance-bar-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.attendance-bar-percent {
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.attendance-bar--large .attendance-bar-percent {
+  font-size: 2rem;
+}
+
+.attendance-bar-count {
+  font-size: 0.8rem;
+}
+
+.attendance-bar-track {
+  position: relative; /* the positioning context the marker below needs */
+  height: 10px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.attendance-bar--large .attendance-bar-track {
+  height: 16px;
+  border-radius: 8px;
+}
+
+.attendance-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+/* The attendance the student is required to have, marked across the bar.
+   Centred on its offset so a bar of 100 still reads as a mark at the end
+   rather than disappearing under the track's overflow clip. Drawn over the
+   fill, so it stays visible on a class that has cleared it. */
+.attendance-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--text-h);
+}
+
+.threshold-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.8rem;
+}
+
+/* Met and below are distinguished by their words first — the colour only
+   agrees with what the sentence already says. */
+.threshold-standing--met {
+  color: var(--success);
+}
+
+.threshold-standing--below {
+  color: var(--warning);
+}
+
+.threshold-catch-up {
+  color: var(--text-muted);
+}
+
+.trend {
+  margin: 20px 0;
+}
+
+.trend-heading,
+.hierarchy-subheading {
+  color: var(--text-h);
+}
+
+.trend-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trend-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+/* A fixed height so the fill's percentage reads as a proportion of the
+   same reference in every column; without it each track would size to its
+   own content and the bars would no longer be comparable. */
+.trend-track {
+  display: flex;
+  align-items: flex-end;
+  width: 34px;
+  height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.trend-fill {
+  width: 100%;
+  background: var(--accent);
+}
+
+.trend-value {
+  color: var(--text-h);
+}
+
+.lecture-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.lecture-mark {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+}
+
+.lecture-mark--present {
+  background: var(--accent);
+}
+
+/* Hollow, not merely a different hue — the shape carries the meaning on
+   its own. */
+.lecture-mark--absent {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+.lecture-status {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.lecture-status--present {
+  color: var(--accent);
+}
+
+.lecture-status--absent {
+  color: var(--danger);
+}
