@@ -1,6 +1,7 @@
 """Tests for backend/attendance/summary.py (the student-facing read side)
 and the two shared helpers it is graded against
-(attendance/serializers.py::attendance_percentage/_standing).
+(attendance/threshold.py::attendance_percentage and
+attendance/serializers.py::_standing).
 
 Spec contract under test (09-student-attendance-dashboard.md, "Backend" +
 "Rules for implementation" + "Definition of done"):
@@ -55,7 +56,7 @@ from bson import ObjectId
 
 from attendance import summary
 from attendance.errors import ForbiddenError
-from attendance.serializers import attendance_percentage
+from attendance.threshold import attendance_percentage
 from common.errors import NotFoundError
 
 
@@ -508,7 +509,7 @@ class TestStudentClassAttendance:
         assert context["course"] == "Operating Systems"
 
 
-# --- attendance_percentage (attendance/serializers.py) -------------------------
+# --- attendance_percentage (attendance/threshold.py) ---------------------------
 #
 # Every count `summary.py` produces is only meaningful once this rule is
 # applied to it, so it is worth its own direct coverage rather than only

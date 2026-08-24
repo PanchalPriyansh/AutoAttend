@@ -24,7 +24,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from academic.context import class_hierarchy_context
-from attendance.serializers import attendance_percentage
+from attendance.threshold import attendance_percentage
 from database.schema import (
     ATTENDANCE_NOTIFICATIONS,
     ATTENDANCE_RECORDS,

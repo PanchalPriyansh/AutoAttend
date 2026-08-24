@@ -63,6 +63,26 @@ blueprint ("APIs" + "Rules for implementation" + "Definition of done"):
     status, a roster, a class average, `marked_by`, `taken_by`,
     `updated_by`, `source`, or a session id.
 
+Also covers 11-student-attendance-threshold.md's fields on those same two
+endpoints ("APIs" + "Backend" + "Definition of done"):
+  - `GET /api/attendance/me` gains a top-level `threshold` and each
+    `classes[]` entry gains `meets_threshold` + `lectures_to_reach`;
+    `GET /api/attendance/me/sessions` gains the same three fields for the
+    one class it describes.
+  - `overall` and every `monthly` bucket carry none of the three fields --
+    the bar is applied per class only, never to an average or a month.
+  - A class with `percentage: null` reports `meets_threshold: null` and
+    `lectures_to_reach: null`, never `false`/`0`; a class exactly at the
+    bar reports `meets_threshold: true`.
+  - With `Config.LOW_ATTENDANCE_THRESHOLD` misconfigured, both endpoints
+    still answer `200` with the same attendance figures as before,
+    `threshold: null`, and `meets_threshold`/`lectures_to_reach` `null` on
+    every class -- a bad environment variable degrades the dashboard, it
+    does not break it.
+  - No status code, role, parameter, or error contract changes; the
+    `student_id`-is-never-read coverage above is unmodified by this
+    feature and is not repeated here.
+
 `routes.auth.get_db` and `routes.attendance.get_db` are monkeypatched to
 the same in-memory fake db (attendance_test_helpers.py) so a real
 `/api/auth/login` call mints genuine JWT + CSRF cookies while the
@@ -76,6 +96,7 @@ every "capture" is a short block of synthetic bytes.
 import io
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from attendance_test_helpers import (
     build_owned_class_with_roster,
     fake_closest_match,
@@ -95,6 +116,7 @@ from attendance_test_helpers import (
 )
 from bson import ObjectId
 
+from config import Config
 from database.schema import ATTENDANCE_RECORDS, ATTENDANCE_SESSIONS
 from recognition.errors import ImageDecodeError, VideoDecodeError
 from recognition.validators import MAX_IMAGE_BYTES, MAX_REQUEST_BYTES, MAX_VIDEO_BYTES
@@ -2541,6 +2563,341 @@ class TestGetMyClassAttendanceRoute:
         assert {unenrolled.status_code, nonexistent.status_code} == {403, 404}
 
 
+# --- 11-student-attendance-threshold.md: the bar on the two responses --------
+#
+# `attendance/serializers.py` and `attendance/threshold.py` are covered
+# directly by test_attendance_threshold.py; the tests below are only
+# concerned with the two endpoints wiring the bar in correctly -- the same
+# configured value reaching both responses, applied to the right scope,
+# and degrading safely when unusable.
+
+
+def _five_lectures_four_present_one_absent(klass, student):
+    """A roster of five recorded lectures at 80% (4 present, 1 absent) --
+    comfortably above the default 75% bar, used wherever a test needs a
+    class that meets the bar with a known, non-boundary percentage.
+    """
+    sessions = [
+        make_attendance_session(klass["_id"], date=datetime(2020, 1, day, tzinfo=timezone.utc))
+        for day in range(1, 6)
+    ]
+    statuses = ["present", "present", "present", "present", "absent"]
+    records = [
+        make_attendance_record(session["_id"], klass["_id"], student["_id"], status=status)
+        for session, status in zip(sessions, statuses)
+    ]
+    return sessions, records
+
+
+class TestOverviewThresholdFields:
+    def test_returns_the_configured_threshold_and_a_class_below_the_bar(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        # 1 present, 3 absent -> 25%, below the default 75% bar.
+        sessions = [
+            make_attendance_session(klass["_id"], date=datetime(2020, 1, day, tzinfo=timezone.utc))
+            for day in range(1, 5)
+        ]
+        statuses = ["present", "absent", "absent", "absent"]
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status=status)
+            for session, status in zip(sessions, statuses)
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        body = response.get_json()
+        assert body["threshold"] == 75.0
+        entry = body["classes"][0]
+        assert entry["percentage"] == 25.0
+        assert entry["meets_threshold"] is False
+        assert isinstance(entry["lectures_to_reach"], int)
+        assert entry["lectures_to_reach"] > 0
+
+    def test_a_class_above_the_bar_reports_met_and_a_zero_catch_up_figure(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        sessions, records = _five_lectures_four_present_one_absent(klass, student)
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["percentage"] == 80.0
+        assert entry["meets_threshold"] is True
+        assert entry["lectures_to_reach"] == 0
+
+    def test_a_class_exactly_at_the_bar_reports_meets_threshold_true(
+        self, app_instance, monkeypatch
+    ):
+        """DoD: "matching flask notify-low-attendance, which does not mail
+        that student." The sweep only mails `percentage < threshold`, so a
+        student sitting exactly on it must read as met here too.
+        """
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        # 3 present, 1 absent -> exactly 75%.
+        sessions = [
+            make_attendance_session(klass["_id"], date=datetime(2020, 1, day, tzinfo=timezone.utc))
+            for day in range(1, 5)
+        ]
+        statuses = ["present", "present", "present", "absent"]
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status=status)
+            for session, status in zip(sessions, statuses)
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["percentage"] == 75.0
+        assert entry["meets_threshold"] is True
+        assert entry["lectures_to_reach"] == 0
+
+    def test_a_class_with_nothing_recorded_reports_null_not_false_or_zero(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        entry = response.get_json()["classes"][0]
+        assert entry["percentage"] is None
+        assert entry["meets_threshold"] is None
+        assert entry["lectures_to_reach"] is None
+
+
+class TestClassDetailThresholdFields:
+    def test_returns_threshold_and_comparison_fields_for_the_one_class(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        sessions, records = _five_lectures_four_present_one_absent(klass, student)
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        body = response.get_json()
+        assert body["threshold"] == 75.0
+        assert body["percentage"] == 80.0
+        assert body["meets_threshold"] is True
+        assert body["lectures_to_reach"] == 0
+
+    def test_a_class_with_nothing_recorded_reports_null_comparison_fields(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment], **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        body = response.get_json()
+        # The bar itself is still readable even though nothing has been
+        # recorded -- only the comparison against it is unanswerable.
+        assert body["threshold"] == 75.0
+        assert body["percentage"] is None
+        assert body["meets_threshold"] is None
+        assert body["lectures_to_reach"] is None
+
+
+class TestThresholdIsScopedToPerClassOnly:
+    """DoD: "overall carries no threshold, meets_threshold, or
+    lectures_to_reach, and neither does any monthly bucket" -- exercised
+    here with a mix of one class below the bar and one above it, so an
+    `overall` verdict (if one leaked in) could not coincidentally agree
+    with either class's.
+    """
+
+    def test_overall_has_no_threshold_fields_even_when_a_class_is_below_the_bar(
+        self, app_instance, monkeypatch
+    ):
+        student = _make_student()
+        strong_class, strong_hierarchy = _build_class_with_hierarchy(
+            class_name="A", course_name="Course A",
+        )
+        weak_class, weak_hierarchy = _build_class_with_hierarchy(
+            class_name="B", course_name="Course B",
+        )
+        enrollments = [
+            make_class_enrollment(strong_class["_id"], student["_id"]),
+            make_class_enrollment(weak_class["_id"], student["_id"]),
+        ]
+        strong_sessions, strong_records = _five_lectures_four_present_one_absent(
+            strong_class, student,
+        )
+        weak_session = make_attendance_session(weak_class["_id"])
+        weak_records = [
+            make_attendance_record(weak_session["_id"], weak_class["_id"], student["_id"], status="absent"),
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[strong_class, weak_class], class_enrollments=enrollments,
+                attendance_sessions=strong_sessions + [weak_session],
+                attendance_records=strong_records + weak_records,
+                **_merge_hierarchies(strong_hierarchy, weak_hierarchy),
+            )
+
+            overview = _get_my_attendance(client, headers).get_json()
+
+        entries_by_id = {entry["id"]: entry for entry in overview["classes"]}
+        assert entries_by_id[str(strong_class["_id"])]["meets_threshold"] is True
+        assert entries_by_id[str(weak_class["_id"])]["meets_threshold"] is False
+        assert "threshold" not in overview["overall"]
+        assert "meets_threshold" not in overview["overall"]
+        assert "lectures_to_reach" not in overview["overall"]
+
+    def test_no_monthly_bucket_carries_a_threshold_field(self, app_instance, monkeypatch):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        sessions, records = _five_lectures_four_present_one_absent(klass, student)
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=sessions, attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        monthly = response.get_json()["monthly"]
+        assert monthly, "expected at least one monthly bucket to check"
+        for bucket in monthly:
+            assert "threshold" not in bucket
+            assert "meets_threshold" not in bucket
+            assert "lectures_to_reach" not in bucket
+
+
+class TestMisconfiguredThresholdDegradesSafely:
+    """DoD: "With the threshold misconfigured, both endpoints still return
+    200 with the same attendance figures as before, threshold: null, and
+    meets_threshold/lectures_to_reach null on every class."
+    """
+
+    @pytest.mark.parametrize("bad_value", [0, -5, 150, "not-a-number", True])
+    def test_overview_degrades_to_null_threshold_fields_without_losing_attendance_figures(
+        self, app_instance, monkeypatch, bad_value
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"])
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status="present"),
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", bad_value)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_attendance(client, headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["threshold"] is None
+        entry = body["classes"][0]
+        assert entry["present_count"] == 1
+        assert entry["absent_count"] == 0
+        assert entry["total_count"] == 1
+        assert entry["percentage"] == 100.0
+        assert entry["meets_threshold"] is None
+        assert entry["lectures_to_reach"] is None
+
+    @pytest.mark.parametrize("bad_value", [0, -5, 150, "not-a-number", True])
+    def test_class_detail_degrades_to_null_threshold_fields_without_losing_attendance_figures(
+        self, app_instance, monkeypatch, bad_value
+    ):
+        student = _make_student()
+        klass, hierarchy = _build_class_with_hierarchy()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session = make_attendance_session(klass["_id"])
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], student["_id"], status="present"),
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", bad_value)
+            _, headers = _login_as_student(
+                monkeypatch, client, student,
+                classes=[klass], class_enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=records,
+                **hierarchy,
+            )
+
+            response = _get_my_class_attendance(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["threshold"] is None
+        assert body["present_count"] == 1
+        assert body["absent_count"] == 0
+        assert body["total_count"] == 1
+        assert body["percentage"] == 100.0
+        assert body["meets_threshold"] is None
+        assert body["lectures_to_reach"] is None
+
+
 # --- Never leaks another student, a roster, or provenance ---------------------
 
 
@@ -2570,7 +2927,14 @@ class TestStudentDashboardNeverLeaksAnything:
         assert set(entry.keys()) == {
             "id", "name", "course", "semester", "department", "institute",
             "present_count", "absent_count", "total_count", "percentage",
+            # 11-student-attendance-threshold.md: the bar is applied per
+            # class and nowhere else.
+            "meets_threshold", "lectures_to_reach",
         }
+        # Unchanged, and deliberately so: `overall` carries no comparison.
+        # An average hides the class a student is actually short in, and
+        # the sweep applies the bar per class, so a verdict here would be
+        # one the institute never defined.
         assert set(body["overall"].keys()) == {
             "present_count", "absent_count", "total_count", "percentage",
         }
@@ -2633,12 +2997,17 @@ class TestStudentDashboardNeverLeaksAnything:
         assert set(body.keys()) == {
             "class", "present_count", "absent_count", "total_count",
             "percentage", "monthly", "sessions",
+            # 11-student-attendance-threshold.md: the bar, and how this
+            # one class stands against it.
+            "threshold", "meets_threshold", "lectures_to_reach",
         }
         assert set(body["class"].keys()) == {
             "id", "name", "course", "semester", "department", "institute",
         }
         for row in body["sessions"]:
             assert set(row.keys()) == {"date", "status"}
+        # Unchanged, and deliberately so: a month is not a window anybody
+        # is assessed on, so no bucket carries a comparison.
         for bucket in body["monthly"]:
             assert set(bucket.keys()) == {
                 "month", "present_count", "absent_count", "total_count", "percentage",

@@ -305,6 +305,42 @@ class TestNotificationsPackageStaysOffTheCvPath:
         )
 
 
+class TestAttendancePackageDoesNotImportNotifications:
+    """11-student-attendance-threshold.md, "Rules for implementation" +
+    Definition of done: "No file under backend/attendance/ imports from
+    notifications/."
+
+    notifications/ is CLI-only by design -- test_app_factory.py already
+    asserts no route contains "notification" so nothing on a request path
+    can send mail. attendance/threshold.py reads the same
+    Config.LOW_ATTENDANCE_THRESHOLD value independently rather than
+    borrowing notifications/settings.py::load_sweep_settings or its
+    MIN_RECORDED_LECTURES, precisely so this import never has a reason to
+    exist. The reverse direction (notifications/service.py importing
+    attendance_percentage from attendance/threshold.py) is fine and
+    unaffected by this guard -- see
+    TestNotificationsPackageStaysOffTheCvPath above for that package's own
+    isolation rules.
+    """
+
+    ATTENDANCE_DIR = os.path.join(BACKEND_DIR, "attendance")
+    FORBIDDEN_IMPORT = re.compile(r"^\s*(import|from)\s+notifications\b")
+
+    def test_no_attendance_module_imports_from_notifications(self):
+        offenders = []
+        for path in _iter_backend_python_files():
+            if not os.path.normpath(path).startswith(
+                os.path.normpath(self.ATTENDANCE_DIR)
+            ):
+                continue
+            with open(path, "r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if self.FORBIDDEN_IMPORT.match(line):
+                        offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+        assert not offenders, f"attendance/ must not depend on notifications/: {offenders}"
+
+
 class TestEnvExampleFilesAndGitignore:
     def test_an_env_example_file_exists_for_the_backend(self):
         assert os.path.exists(os.path.join(REPO_ROOT, ".env.example")) or os.path.exists(
