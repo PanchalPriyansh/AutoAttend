@@ -10,7 +10,9 @@
      tokens        every other file reads these custom properties
      base          element defaults the pages then override
      login         signed out, renders no shell
-     shell         the frame the ten signed-in pages sit in
+     shell         the frame the nine signed-in pages sit in
+     <page>        one file per redesigned page, after the frame it
+                   sits in and before the scaffolding it replaces
      scaffolding   everything not yet redesigned (see below)
 
    `scaffolding.css` is the styling written while the features were being
@@ -23,4 +25,6 @@
 @import './styles/base.css';
 @import './styles/login.css';
 @import './styles/shell.css';
+@import './styles/student-dashboard.css';
+@import './styles/student-attendance.css';
 @import './styles/scaffolding.css';

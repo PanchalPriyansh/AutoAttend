@@ -104,151 +104,170 @@ function AttendanceOverview() {
   if (loading) {
     return (
       <AppShell title="My Attendance">
-        <p>Loading your attendance…</p>
+        <p className="sa-loading">Loading your attendance…</p>
       </AppShell>
     )
   }
 
   return (
     <AppShell title="My Attendance">
-      {error ? <p className="hierarchy-error">{error}</p> : null}
+      <div className="student-attendance">
+        {error ? <p className="sa-error">{error}</p> : null}
 
-      {overview && !error ? (
-        <>
-          <section className="hierarchy-level">
-            <h2 className="hierarchy-subheading">Overall</h2>
-            <AttendanceBar
-              size="large"
-              percentage={overview.overall.percentage}
-              presentCount={overview.overall.present_count}
-              totalCount={overview.overall.total_count}
-            />
-          </section>
-
-          <section className="hierarchy-level">
-            <div className="hierarchy-header">
-              <h2>My classes</h2>
-              <span className="hierarchy-hint">Lowest attendance first</span>
-            </div>
-
-            {ordered.length === 0 ? (
-              <p className="hierarchy-hint">
-                You are not enrolled in any classes yet. Your college admin
-                assigns these.
-              </p>
-            ) : (
-              <ul className="hierarchy-items">
-                {ordered.map((item) => (
-                  <li
-                    key={item.id}
-                    className={item.id === openClassId ? 'is-selected' : undefined}
-                  >
-                    <span className="user-identity">
-                      <span className="user-name">{describeClass(item)}</span>
-                      <span className="hierarchy-hint">
-                        {[item.semester, item.department].filter(Boolean).join(' · ')}
-                      </span>
-                      <AttendanceBar
-                        percentage={item.percentage}
-                        presentCount={item.present_count}
-                        totalCount={item.total_count}
-                        threshold={overview.threshold}
-                      />
-                      <ThresholdNote
-                        threshold={overview.threshold}
-                        meetsThreshold={item.meets_threshold}
-                        lecturesToReach={item.lectures_to_reach}
-                      />
-                    </span>
-
-                    <button
-                      type="button"
-                      className="hierarchy-select"
-                      onClick={() => openClass(item.id)}
-                    >
-                      {item.id === openClassId ? 'Close' : 'View lectures'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
-      ) : null}
-
-      {openClassId ? (
-        <section className="hierarchy-level">
-          <div className="hierarchy-header">
-            <h2>{detail ? describeClass(detail.class) : 'Lectures'}</h2>
-          </div>
-
-          <div className="hierarchy-form">
-            <div className="field">
-              <label htmlFor="attendance-from">From</label>
-              <input
-                id="attendance-from"
-                type="date"
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="attendance-to">To</label>
-              <input
-                id="attendance-to"
-                type="date"
-                value={to}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </div>
-          </div>
-
-          {detailError ? <p className="hierarchy-error">{detailError}</p> : null}
-          {detailLoading ? <p>Loading lectures…</p> : null}
-
-          {detail && !detailLoading ? (
-            <>
+        {overview && !error ? (
+          <>
+            <section className="sa-section sa-card sa-overall">
+              <h2 className="sa-eyebrow">Overall</h2>
               <AttendanceBar
-                percentage={detail.percentage}
-                presentCount={detail.present_count}
-                totalCount={detail.total_count}
-                threshold={detail.threshold}
+                size="large"
+                percentage={overview.overall.percentage}
+                presentCount={overview.overall.present_count}
+                totalCount={overview.overall.total_count}
               />
-              <ThresholdNote
-                threshold={detail.threshold}
-                meetsThreshold={detail.meets_threshold}
-                lecturesToReach={detail.lectures_to_reach}
-              />
+            </section>
 
-              {detail.total_count === 0 ? (
-                <p className="hierarchy-hint">
-                  No attendance has been recorded for this class yet.
+            <section className="sa-section sa-classes">
+              <div className="sa-section-head">
+                <h2 className="sa-eyebrow">My classes</h2>
+                <span className="sa-hint">Lowest attendance first</span>
+              </div>
+
+              {ordered.length === 0 ? (
+                <p className="sa-empty">
+                  You are not enrolled in any classes yet. Your college admin
+                  assigns these.
                 </p>
               ) : (
-                <>
-                  <AttendanceTrend months={detail.monthly} />
-
-                  <h3 className="hierarchy-subheading">Every lecture</h3>
-                  <LectureStrip sessions={detail.sessions} />
-
-                  <ul className="hierarchy-items">
-                    {detail.sessions.map((lecture) => (
-                      <li key={lecture.date}>
-                        <span className="user-identity">
-                          <span className="user-name">{lecture.date}</span>
+                <ul className="sa-class-list">
+                  {ordered.map((item) => (
+                    <li
+                      key={item.id}
+                      className={
+                        item.id === openClassId ? 'sa-class is-open' : 'sa-class'
+                      }
+                    >
+                      <span className="sa-class-main">
+                        <span className="sa-class-name">{describeClass(item)}</span>
+                        <span className="sa-class-meta">
+                          {[item.semester, item.department].filter(Boolean).join(' · ')}
                         </span>
-                        <span className={`lecture-status lecture-status--${lecture.status}`}>
-                          {lecture.status === 'present' ? 'Present' : 'Absent'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
+                        <AttendanceBar
+                          percentage={item.percentage}
+                          presentCount={item.present_count}
+                          totalCount={item.total_count}
+                          threshold={overview.threshold}
+                        />
+                        <ThresholdNote
+                          threshold={overview.threshold}
+                          meetsThreshold={item.meets_threshold}
+                          lecturesToReach={item.lectures_to_reach}
+                        />
+                      </span>
+
+                      <button
+                        type="button"
+                        className="sa-toggle"
+                        onClick={() => openClass(item.id)}
+                        aria-expanded={item.id === openClassId}
+                        /* Only while the panel exists: pointing at an id
+                           that is not in the document is worse than saying
+                           nothing. */
+                        aria-controls={
+                          item.id === openClassId ? 'sa-lecture-panel' : undefined
+                        }
+                      >
+                        {item.id === openClassId ? 'Close' : 'View lectures'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </>
-          ) : null}
-        </section>
-      ) : null}
+            </section>
+          </>
+        ) : null}
+
+        {openClassId ? (
+          <section className="sa-section sa-card sa-detail" id="sa-lecture-panel">
+            <div className="sa-section-head">
+              <h2 className="sa-panel-title">
+                {detail ? describeClass(detail.class) : 'Lectures'}
+              </h2>
+            </div>
+
+            <div className="sa-filter">
+              <div className="sa-field">
+                <label htmlFor="attendance-from">From</label>
+                <input
+                  id="attendance-from"
+                  type="date"
+                  value={from}
+                  onChange={(event) => setFrom(event.target.value)}
+                />
+              </div>
+              <div className="sa-field">
+                <label htmlFor="attendance-to">To</label>
+                <input
+                  id="attendance-to"
+                  type="date"
+                  value={to}
+                  onChange={(event) => setTo(event.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* The wrapper is always rendered, empty or not: a live region
+                has to be in the document before its content changes, or the
+                first message is announced late or not at all. It collapses
+                via .sa-status:empty so it costs no gap while idle. */}
+            <div className="sa-status" aria-live="polite">
+              {detailError ? <p className="sa-error">{detailError}</p> : null}
+              {detailLoading ? (
+                <p className="sa-loading">Loading lectures…</p>
+              ) : null}
+            </div>
+
+            {detail && !detailLoading ? (
+              <>
+                <AttendanceBar
+                  percentage={detail.percentage}
+                  presentCount={detail.present_count}
+                  totalCount={detail.total_count}
+                  threshold={detail.threshold}
+                />
+                <ThresholdNote
+                  threshold={detail.threshold}
+                  meetsThreshold={detail.meets_threshold}
+                  lecturesToReach={detail.lectures_to_reach}
+                />
+
+                {detail.total_count === 0 ? (
+                  <p className="sa-empty">
+                    No attendance has been recorded for this class yet.
+                  </p>
+                ) : (
+                  <>
+                    <AttendanceTrend months={detail.monthly} />
+
+                    <h3 className="sa-subheading">Every lecture</h3>
+                    <LectureStrip sessions={detail.sessions} />
+
+                    <ul className="sa-lectures">
+                      {detail.sessions.map((lecture) => (
+                        <li key={lecture.date} className="sa-lecture">
+                          <span className="sa-lecture-date">{lecture.date}</span>
+                          <span className={`lecture-status lecture-status--${lecture.status}`}>
+                            {lecture.status === 'present' ? 'Present' : 'Absent'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
     </AppShell>
   )
 }

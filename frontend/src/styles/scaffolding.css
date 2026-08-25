@@ -1,11 +1,15 @@
 /* Styling written while the features were being built -- temporary.
 
    These class names do not partition by page: .hierarchy-* is used by
-   twelve files across admin, faculty and student, .user-* by all three
-   roles, .lecture-* by faculty and student. They were never a shared
-   vocabulary; pages simply borrowed whatever already existed. That is
-   why this is one file rather than several, and why splitting it by
-   page would mean duplicating rules.
+   eleven files across admin and faculty, .user-* by five of them. They
+   were never a shared vocabulary; pages simply borrowed whatever
+   already existed. That is why this is one file rather than several,
+   and why splitting it by page would mean duplicating rules.
+
+   A redesigned page stops borrowing them rather than restyling them:
+   /student/attendance was renamed onto its own .sa-* hooks so that
+   changing its layout could not reach the admin and faculty screens
+   still reading the rules below.
 
    Each /frontend-maker group carves its pages out of here into a file
    of its own. This file should only ever shrink. */
@@ -216,181 +220,4 @@
   width: 100%;
   max-width: 320px;
   margin: 12px 0;
-}
-
-/* --- Student attendance dashboard ---------------------------------- */
-
-/* Present and absent are never distinguished by colour alone anywhere
-   below: every bar carries its percentage as text, and a lecture mark is
-   solid when present and hollow when absent. A red/green-only design is
-   unreadable to a colourblind student, and this is the one screen in the
-   project a student is guaranteed to open. */
-
-.attendance-bar {
-  margin: 8px 0;
-  max-width: 420px;
-}
-
-.attendance-bar-figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.attendance-bar-percent {
-  color: var(--text-h);
-  font-weight: 500;
-}
-
-.attendance-bar--large .attendance-bar-percent {
-  font-size: 2rem;
-}
-
-.attendance-bar-count {
-  font-size: 0.8rem;
-}
-
-.attendance-bar-track {
-  position: relative; /* the positioning context the marker below needs */
-  height: 10px;
-  margin-top: 6px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.attendance-bar--large .attendance-bar-track {
-  height: 16px;
-  border-radius: 8px;
-}
-
-.attendance-bar-fill {
-  height: 100%;
-  background: var(--accent);
-}
-
-/* The attendance the student is required to have, marked across the bar.
-   Centred on its offset so a bar of 100 still reads as a mark at the end
-   rather than disappearing under the track's overflow clip. Drawn over the
-   fill, so it stays visible on a class that has cleared it. */
-.attendance-bar-marker {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  transform: translateX(-50%);
-  background: var(--text-h);
-}
-
-.threshold-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  font-size: 0.8rem;
-}
-
-/* Met and below are distinguished by their words first — the colour only
-   agrees with what the sentence already says. */
-.threshold-standing--met {
-  color: var(--success);
-}
-
-.threshold-standing--below {
-  color: var(--warning);
-}
-
-.threshold-catch-up {
-  color: var(--text-muted);
-}
-
-.trend {
-  margin: 20px 0;
-}
-
-.trend-heading,
-.hierarchy-subheading {
-  color: var(--text-h);
-}
-
-.trend-columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.trend-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-}
-
-/* A fixed height so the fill's percentage reads as a proportion of the
-   same reference in every column; without it each track would size to its
-   own content and the bars would no longer be comparable. */
-.trend-track {
-  display: flex;
-  align-items: flex-end;
-  width: 34px;
-  height: 90px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.trend-fill {
-  width: 100%;
-  background: var(--accent);
-}
-
-.trend-value {
-  color: var(--text-h);
-}
-
-.lecture-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 8px 0 16px;
-  padding: 0;
-  list-style: none;
-}
-
-.lecture-mark {
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-}
-
-.lecture-mark--present {
-  background: var(--accent);
-}
-
-/* Hollow, not merely a different hue — the shape carries the meaning on
-   its own. */
-.lecture-mark--absent {
-  background: transparent;
-  border-color: var(--danger);
-}
-
-.lecture-status {
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-.lecture-status--present {
-  color: var(--accent);
-}
-
-.lecture-status--absent {
-  color: var(--danger);
 }

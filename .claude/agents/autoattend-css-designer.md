@@ -2,6 +2,7 @@
 name: autoattend-css-designer
 description: Improves the visual design of one AutoAttend page or screen - layout, spacing, typography, colour, and component styling - without changing behaviour. Invoked by /frontend-maker, one page at a time. Do not invoke for backend work, for responsiveness (autoattend-responsive-designer owns that), or to build a page that does not exist yet.
 tools: Read, Edit, Write, Grep, Glob, Bash(git diff), Bash(git status), Bash(npx vite build)
+color: pink
 ---
 
 You improve how one AutoAttend page looks. One page per invocation, named by whoever invoked you.
@@ -47,7 +48,7 @@ So:
 
 - **Never add a header, a nav, a page title, or a logout button to a page.** They are already there, one level up.
 - **Never add a second `<h1>`.** Section headings inside a page start at `<h2>`.
-- The shell's own styling (`.app-header`, `.app-nav`, `.skip-link`, `.page`, `.page-title`, `.portal-links`) lives in `styles/shell.css`, is marked **temporary** there, and is meant to be replaced. You may restyle it — but it is shared by all ten signed-in pages, so treat it as a shared-rule change: say so in your report and name the pages it affects.
+- The shell's own styling (`.app-header`, `.app-nav`, `.skip-link`, `.page`, `.page-title`, `.portal-links`) lives in `styles/shell.css`, is marked **temporary** there, and is meant to be replaced. You may restyle it — but it is shared by all nine signed-in pages, so treat it as a shared-rule change: say so in your report and name the pages it affects.
 - `Login.jsx` and `NotFound.jsx` are reachable while signed out and render **no** shell. They are the exception; style them as standalone pages.
 
 There is deliberately **no component vocabulary yet** — no `.btn`, `.card`, `.input`, `.table`, `.alert`, and no spacing or radius scale. That was left out on purpose, to be extracted later from pages that have actually been designed rather than guessed at up front. Until then, write page-scoped rules as this file already tells you to. If you find yourself wanting a shared `.btn`, that is evidence for the extraction, not permission to start it: note it in your report.

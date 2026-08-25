@@ -45,6 +45,14 @@
   text-decoration: none;
 }
 
+/* --text-h is already the darkest text colour, so hover cannot deepen
+   it -- the underline is what changes. Marked the same way, and at the
+   same offset, as .app-nav a.is-current further down. */
+.app-brand:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .app-nav ul {
   display: flex;
   flex-wrap: wrap;
@@ -91,6 +99,15 @@
   cursor: pointer;
 }
 
+/* Hover raises contrast rather than dropping it: the border takes the
+   accent and the fill takes the accent tint. Same pairing the student
+   dashboard card uses, so the two agree about what "hovered" looks
+   like. */
+.app-logout:hover {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
 .skip-link:focus-visible,
 .app-brand:focus-visible,
 .app-nav a:focus-visible,
@@ -110,12 +127,39 @@
   outline: none;
 }
 
+/* line-height is set here because the h1 does not inherit a usable one.
+   tokens.css sets `font: 18px/145%` on :root, and a *percentage*
+   line-height resolves against the font-size of the element it is
+   declared on, then inherits as that computed length -- so every h1 in
+   the app inherits a 26.1px line box while rendering at 36px text. That
+   is invisible for as long as the title fits on one line, and the two
+   lines overlap the moment it does not: at 360px, "Student Dashboard"
+   wrapped and the descenders of the first line sat inside the caps of
+   the second.
+
+   1.2 is unitless, so it scales with the font-size instead of being
+   frozen at whatever the root happened to be.
+
+   Blast radius: every page that renders AppShell -- the nine signed-in
+   routes in App.jsx: /admin, /admin/academics, /admin/users,
+   /admin/face-enrollment, /faculty, /faculty/attendance,
+   /faculty/attendance/history, /student, /student/attendance. Login and
+   NotFound render no shell and are untouched. On a title that fits one
+   line this only changes the h1's line box from 26.1px to 43.2px, which
+   is the height it should always have had; nothing else moves. */
 .page-title {
   margin-top: 0;
+  line-height: 1.2;
+  /* Titles wrap on narrow screens now that the line box is right --
+     balance keeps "Student Dashboard" from breaking to a one-word
+     second line. */
+  text-wrap: balance;
 }
 
 /* The landing pages' list of destinations, rendered from navigation.js.
-   Scoped to those three pages; not a general-purpose card. */
+   Still temporary, and still only for /admin and /faculty -- /student
+   has been redesigned and now renders .student-home-* instead, so this
+   block no longer reaches it. Not a general-purpose card. */
 .portal-links {
   display: flex;
   flex-direction: column;

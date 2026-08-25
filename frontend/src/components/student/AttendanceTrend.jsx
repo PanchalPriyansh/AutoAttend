@@ -27,7 +27,17 @@ function AttendanceTrend({ months }) {
     <div className="trend">
       <h3 className="trend-heading">Month by month</h3>
 
-      <ol className="trend-columns">
+      {/* Focusable because it scrolls: with a full year in it the earlier
+          months sit off the left edge, and a keyboard-only student had no
+          way to reach them. Named as well as focusable, so it does not
+          announce as an unlabelled stop in the tab order. Each column
+          keeps its own aria-label, which is what actually carries the
+          figures. */}
+      <ol
+        className="trend-columns"
+        tabIndex={0}
+        aria-label="Month by month attendance"
+      >
         {months.map((bucket) => (
           <li key={bucket.month} className="trend-column">
             <span className="trend-value">{bucket.percentage}%</span>

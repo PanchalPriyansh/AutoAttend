@@ -1,0 +1,779 @@
+/* --- Student attendance (/student/attendance) ----------------------
+
+   The one screen every student opens, and the most visually dense in
+   the project: an overall figure, a list of classes each with its own
+   gauge, and a per-class panel holding a month-by-month trend, a strip
+   of individual lectures, and the list behind it.
+
+   Everything below is owned by this page. The markup used to borrow
+   .hierarchy-*, .user-identity and .field from scaffolding.css, which
+   are shared with eleven undesigned admin and faculty screens -- so the
+   JSX was renamed to page-owned .sa-* hooks rather than those rules
+   being restyled underneath the other pages. The four visual
+   components' own classes (.attendance-bar*, .threshold-*, .trend*,
+   .lecture-*) were already exclusive to this page and were moved here
+   from scaffolding.css unchanged in name.
+
+   Two things about this page are load-bearing and are preserved rather
+   than merely inherited:
+
+     - Present and absent are never told apart by colour alone. Every
+       bar carries its percentage as text, a lecture mark is solid when
+       present and hollow when absent, the list spells out the word, and
+       ThresholdNote states met/below in a sentence. A red/green-only
+       version of this screen is unreadable to a colourblind student.
+     - The bar fill, the threshold marker's offset, and the trend
+       column heights are inline styles because they are data. Nothing
+       here tries to take them over.
+
+   The vertical rhythm is 4px-based throughout: 32 between sections, 20
+   inside a card, 12 between siblings, 8 and below within a group. */
+
+.student-attendance {
+  display: grid;
+  gap: 32px;
+  /* Stated rather than left implicit, and minmax(0, …) rather than auto.
+     An implicit `auto` track is floored at its content's min-content
+     width, and the trend below is a nowrap row -- so a student with a
+     year of months made the track ~760px, pushed every section of the
+     page out to that width, and put a horizontal scrollbar on the whole
+     document at every viewport size. The trend's own overflow-x could
+     never engage, because its track was never allowed to be narrower
+     than its contents. minmax(0, 1fr) lets the column be as narrow as
+     the page is, which is what hands the scrolling back to the trend.
+     (The two-column rule at the end of the file already had this, via
+     its own explicit `502px minmax(0, 1fr)`.) */
+  grid-template-columns: minmax(0, 1fr);
+  /* One column, and narrower than .page's 1100px on purpose. A class row
+     puts the class name at the left edge and its button at the right, and
+     at 1100px those two are far enough apart that the eye stops
+     associating them. 720 is also about the widest the lecture list stays
+     scannable at. The two-column layout further down is what uses the
+     rest of the width, rather than this measure being stretched. */
+  max-width: 720px;
+}
+
+/* One ring for every control on the page -- the two date inputs and one
+   button per class -- rather than three near-identical rules. Same 2px
+   at 2px offset the login screen and the student dashboard use. */
+.student-attendance :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sa-section {
+  margin: 0;
+}
+
+/* Raised the same way the login card and the dashboard cards are:
+   --surface reads as above --bg in light and in dark. No shadow -- on
+   this page the hierarchy is carried by type size, and three stacked
+   drop shadows would only add noise to a screen that is mostly data. */
+.sa-card {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* --- Headings ------------------------------------------------------
+
+   Three levels below the shell's <h1>: a small caps label for a
+   section, a plain title for the open class, and a dimmer caps label
+   for the parts of that panel. Size separates the title from the other
+   two; colour separates those two from each other. */
+
+.sa-eyebrow {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sa-subheading,
+.trend-heading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sa-panel-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.sa-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+/* Inside the detail panel the head is a flex item and the gap below it
+   is the panel's own; a margin here would be added to it, not merged. */
+.sa-detail .sa-section-head {
+  margin-bottom: 0;
+}
+
+.sa-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* --- Page-level states ---------------------------------------------
+
+   Loading and empty are written out rather than left as bare
+   paragraphs: an unstyled sentence at the body size where a card is
+   expected reads as a half-drawn screen. The dashed border says "there
+   is nothing here yet" in a way a solid card cannot. */
+
+.sa-loading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.sa-empty {
+  margin: 0;
+  padding: 20px;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+/* A bordered callout, not a run of red text -- the same shape login.css
+   uses, so a failure looks the same in both places. The message comes
+   from the server and can contain an unbroken token longer than the
+   box. */
+.sa-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  background: var(--danger-weak);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+/* The panel's polite live region. Always in the DOM so an announcement
+   is never missed, and collapsed while empty so it does not spend one of
+   .sa-detail's 12px gaps on nothing. */
+.sa-status:empty {
+  display: none;
+}
+
+/* --- The class list ------------------------------------------------ */
+
+.sa-class-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Name and figures in one column, the button in the other, so the
+   button sits on a straight edge down the whole list instead of landing
+   wherever the previous row's text ran out. */
+.sa-class {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* The open class is marked on the card as well as by the button's
+   label, because the panel it opened is at the bottom of the page
+   rather than underneath the row. */
+.sa-class.is-open {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.sa-class-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The class dominates its row: larger and heavier than the line under
+   it, and in --text-h while that line drops to --text-muted. */
+.sa-class-name {
+  color: var(--text-h);
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.sa-class-meta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.sa-class-main .attendance-bar {
+  margin-top: 12px;
+}
+
+.sa-class-main .threshold-note {
+  margin-top: 10px;
+}
+
+.sa-toggle {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 8px 14px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  /* Drops the ~300ms tap delay mobile browsers add while they wait for
+     a possible double-tap zoom. */
+  touch-action: manipulation;
+  /* Set deliberately rather than left to the UA, whose default grey box
+     ignores the 8px radius and flashes a rectangle over a rounded
+     button. :active below is the feedback instead, and it matches what
+     hover does. */
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+/* Hover raises contrast rather than dropping it -- the same accent
+   border plus accent tint the shell's logout button and the student
+   dashboard card use. */
+.sa-toggle:hover {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+.sa-toggle:active {
+  background: var(--accent-weak);
+  border-color: var(--accent-hover);
+}
+
+/* While its class is open the button reads "Close", so the tint here
+   only agrees with a label that already says so. */
+.sa-class.is-open .sa-toggle {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* --- The open class's panel ---------------------------------------- */
+
+.sa-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The two parts that start a new thought get a wider gap than the 12px
+   between things that belong together. */
+.sa-detail > .trend,
+.sa-detail > .sa-subheading {
+  margin-top: 12px;
+}
+
+/* A rule and a gap rather than a tinted box: the filter is a control
+   strip above the figures, not a second card inside the card. */
+.sa-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sa-field {
+  display: flex;
+  flex: 0 1 180px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sa-field label {
+  color: var(--text-h);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* font: inherit drops the browser's own small form font. --bg keeps the
+   input distinct from the --surface card it sits on, the same
+   relationship the login card's inputs have. */
+.sa-field input {
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sa-field input:hover {
+  border-color: var(--text-muted);
+}
+
+/* --- Lecture list --------------------------------------------------
+
+   Dozens of rows, read by scanning down one column for the absences --
+   so it is tight (a 32px row) and separated by hairlines rather than
+   padded out into cards. Capped at the same width as the bars above it
+   so the date column and the bar start on the same left edge. */
+
+.sa-lectures {
+  margin: 0;
+  padding: 0;
+  max-width: 460px;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.sa-lecture {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sa-lecture-date {
+  color: var(--text-h);
+  font-size: 0.9rem;
+  /* The dates are fixed-width ISO strings; lining figures keep the
+     columns straight down a long list. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Components ----------------------------------------------------
+
+   Moved from scaffolding.css. Each of these class families is rendered
+   by exactly one component, and every one of those components exists
+   only for this page. */
+
+/* AttendanceBar --------------------------------------------------- */
+
+/* One ceiling for both sizes, so that in the single-column layout the
+   overall gauge and a class gauge are exactly as long as each other and
+   can be compared by eye rather than by reading both numbers. In the
+   two-column layout at the end of this file the overall bar is bounded
+   by its 400px column instead, and that comparison is carried by the
+   figures -- which is what the 2.5rem number is for. */
+.attendance-bar {
+  margin: 0;
+  max-width: 460px;
+}
+
+.attendance-bar-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.attendance-bar-percent {
+  color: var(--text-h);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.attendance-bar-count {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The overall figure is the one number the page exists to show, so it
+   stacks rather than sitting opposite its own subtitle across the full
+   width of the bar. */
+.attendance-bar--large .attendance-bar-figures {
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.attendance-bar--large .attendance-bar-percent {
+  font-size: 2.5rem;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.attendance-bar--large .attendance-bar-count {
+  font-size: 0.9rem;
+}
+
+.sa-eyebrow + .attendance-bar {
+  margin-top: 12px;
+}
+
+.attendance-bar-track {
+  position: relative; /* the positioning context the marker below needs */
+  height: 10px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.attendance-bar--large .attendance-bar-track {
+  height: 14px;
+  margin-top: 14px;
+  border-radius: 7px;
+}
+
+.attendance-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+/* The attendance the student is required to have, marked across the bar.
+   Centred on its offset so a bar of 100 still reads as a mark at the end
+   rather than disappearing under the track's overflow clip. Drawn over the
+   fill, so it stays visible on a class that has cleared it. */
+.attendance-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--text-h);
+}
+
+/* ThresholdNote --------------------------------------------------- */
+
+.threshold-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+/* A bordered pill, so met and below are one glance apart down a list of
+   classes. Met and below are distinguished by their words first -- the
+   colour and the fill only agree with what the sentence already says,
+   and the sentence is what a screen reader and a colourblind reader
+   both get. */
+.threshold-standing {
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.threshold-standing--met {
+  color: var(--success);
+  background: var(--success-weak);
+  border-color: var(--success);
+}
+
+.threshold-standing--below {
+  color: var(--warning);
+  background: var(--warning-weak);
+  border-color: var(--warning);
+}
+
+.threshold-catch-up {
+  color: var(--text-muted);
+}
+
+/* AttendanceTrend ------------------------------------------------- */
+
+.trend {
+  margin: 0;
+}
+
+/* A chronology must not wrap: a second row of months restarts the read
+   at the left edge and the shape of the trend is lost. It scrolls
+   instead, which keeps January to December in one line. */
+.trend-columns {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0 0 4px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.trend-column {
+  display: flex;
+  flex: none;
+  width: 56px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A fixed height so the fill's percentage reads as a proportion of the
+   same reference in every column; without it each track would size to its
+   own content and the bars would no longer be comparable. */
+.trend-track {
+  display: flex;
+  align-items: flex-end;
+  width: 36px;
+  height: 112px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.trend-fill {
+  width: 100%;
+  background: var(--accent);
+}
+
+/* Four labels per column, so they are ranked rather than set at one
+   size: the figure, then the month it belongs to, then the count it was
+   derived from. */
+.trend-value {
+  color: var(--text-h);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-label {
+  color: var(--text);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.trend-count {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* LectureStrip ---------------------------------------------------- */
+
+.lecture-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lecture-mark {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+}
+
+.lecture-mark--present {
+  background: var(--accent);
+}
+
+/* Hollow, not merely a different hue -- the shape carries the meaning on
+   its own, and the 2px border is what makes the hollow one legible at
+   14px rather than merely paler. */
+.lecture-mark--absent {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+/* The per-lecture status, in the list under the strip. It repeats the
+   strip's solid/hollow mark so the two read as the same notation, but
+   the word beside it is what actually carries the state. */
+.lecture-status {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.lecture-status::before {
+  content: '';
+  box-sizing: border-box;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid;
+  border-radius: 3px;
+}
+
+/* Present recedes and absent stands out: a student scanning this list
+   is looking for the absences, not counting the attendances. */
+.lecture-status--present {
+  color: var(--text-muted);
+}
+
+.lecture-status--present::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.lecture-status--absent {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.lecture-status--absent::before {
+  background: transparent;
+  border-color: var(--danger);
+}
+
+/* --- The class card in a narrow viewport, to 693px ------------------
+
+   The same reflow the narrow left column gets at the bottom of this
+   file, for the same reason and with the same declarations: the button
+   drops below the gauge instead of sitting beside it.
+
+   693 is derived the way 1160 and 502 are. A card is the page measure,
+   so viewport - 64 for #root's padding; it then spends 34 on its own
+   padding and border, 16 on its column gap, and about 119 on the button
+   at its longest label ("View lectures"). That leaves the gauge
+   viewport - 233, which reaches its 460px cap down to 693 and is
+   shorter below it -- at 360 the gauge had been squeezed to 127px, a
+   quarter of its length, while the same class's gauge in the panel
+   below ran the full width of the card.
+
+   It also removes a jitter this row had at any width under 693: the
+   button says "View lectures" closed and "Close" open, so opening a
+   class made its own gauge ~50px longer than the ones around it. A
+   gauge whose length depends on a button's label cannot be compared
+   with the gauge under it, which is the whole point of the cap. */
+@media (max-width: 693px) {
+  .sa-class {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stops the button stretching the full width of the card. */
+  .sa-toggle {
+    justify-self: start;
+  }
+}
+
+/* --- The wide layout ------------------------------------------------
+
+   Master and detail, side by side: the class you pick on the left, the
+   lectures you picked it for on the right.
+
+   The detail panel gets the WIDE column because it is far and away the
+   tallest, densest thing on the page -- date filters, a gauge, a trend
+   chart and a lecture list. The class list gets the narrow one because a
+   list of five short cards is the shortest. An earlier version had these
+   the other way round and the result was a class list ending 600px above
+   the bottom of a trend chart squeezed into 400px.
+
+   502px is derived, not chosen: the overall card pads 20px a side over a
+   1px border, so 460 + 42 is the narrowest column in which a gauge still
+   reaches its 460px cap. Both gauges sit in this column now, which also
+   restores something the previous layout had broken -- the overall figure
+   and a class figure are the same length again, so they can be compared
+   by eye rather than only by their numbers.
+
+   Everything is gated on :has(.sa-detail). With no class open there is no
+   second column of content to show, and a two-column grid would simply
+   hang an empty track off the right of the page -- so the layout stays
+   the single approved column until there is something to put beside it.
+   Where :has() is unsupported the page stays single-column always: less
+   compact, never broken.
+
+   1160 is where this starts, and it is deliberately a little above the
+   floor rather than at it. #root pads 32px a side, so the grid gets
+   viewport - 64, and .page caps that at 1100. Both columns have to hold
+   a 502px card for their gauges to reach 460, which with the 32px gap
+   needs 1036 of grid -- a 1100px viewport. Starting at 1160 leaves the
+   right column 562 instead of 502, so the panel has room for its date
+   fields to sit on one line rather than only just clearing the gauge. */
+@media (min-width: 1160px) {
+  .student-attendance:has(.sa-detail) {
+    /* .page's 1100px is the real cap once there are two columns. */
+    max-width: none;
+    grid-template-columns: 502px minmax(0, 1fr);
+    /* Both rows are auto by default, and the detail spans them -- so its
+       height was shared out between the two, and row 1 grew far past the
+       overall card that is the only thing in it. The result was 291px of
+       dead space between the overall figure and "My classes" at 1440,
+       which is the empty space this layout exists to remove. Pinning row
+       1 to its own content and giving row 2 the remainder puts the class
+       list back directly under the overall card; align-items: start
+       below keeps the list at its natural height at the top of that
+       row rather than stretching it down the panel. */
+    grid-template-rows: auto 1fr;
+    /* The detail spans both rows; the left column's two cards keep their
+       own heights instead of being stretched to match it. */
+    align-items: start;
+  }
+
+  /* Reached only when the overview request failed while a class happened
+     to be open. It takes both columns rather than being indented beside
+     the panel, but keeps the 720px measure -- a server message set
+     1100px wide is harder to read, not more visible. */
+  .student-attendance:has(.sa-detail) .sa-error {
+    grid-column: 1 / -1;
+    max-width: 720px;
+  }
+
+  .student-attendance:has(.sa-detail) .sa-overall {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .student-attendance:has(.sa-detail) .sa-classes {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .student-attendance:has(.sa-detail) .sa-detail {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  /* The card reflows rather than compresses. Beside its gauge the button
+     would leave the bar about 315px -- well under its cap -- so in this
+     column it drops to its own line and the gauge keeps the full width.
+     justify-self stops it stretching across the card. */
+  .student-attendance:has(.sa-detail) .sa-class {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .student-attendance:has(.sa-detail) .sa-toggle {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-toggle {
+    transition: none;
+  }
+}

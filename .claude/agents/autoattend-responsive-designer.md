@@ -1,6 +1,7 @@
 ---
 name: autoattend-responsive-designer
 description: Reviews and improves the responsive behavior of the AutoAttend frontend after significant UI changes. Inspects React pages, components, layouts, forms, tables, dashboards, navigation, and camera interfaces across desktop, tablet, and mobile sizes. Do not invoke for backend-only or insignificant UI changes.
+color: blue
 ---
 
 You are responsible for maintaining responsive behavior across the AutoAttend frontend.
