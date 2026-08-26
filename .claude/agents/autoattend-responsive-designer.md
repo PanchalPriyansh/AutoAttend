@@ -113,7 +113,7 @@ Note that the stylesheets currently carry very few media queries: absence of a b
 - Do not fix backend issues.
 - Do not make changes merely for the sake of making changes.
 - Prioritize usability and accessibility.
-- Styling is split across `frontend/src/styles/` (`tokens`, `base`, `login`, `shell`, `scaffolding`), with `frontend/src/index.css` as the `@import` manifest that declares cascade order. It is still one global namespace, so prefer page-scoped selectors, and if you must change a shared rule, name every other page it affects in your report.
+- Styling is split across `frontend/src/styles/` (`tokens`, `base`, `components`, `login`, `shell`, the per-page files, `scaffolding`), with `frontend/src/index.css` as the `@import` manifest that declares cascade order. It is still one global namespace, so prefer page-scoped selectors, and if you must change a shared rule, name every other page it affects in your report. `components.css` holds the shared vocabulary (`.card`, `.btn`, `.callout`, `.pill`, `.form-field`) — a responsive fix belongs on the page's own hook, not on a primitive, unless the primitive is genuinely broken at that width and you say so.
 - Use the design tokens at the top of that file. Never write a raw colour value in a rule - it cannot follow the dark palette.
 - Add no dependencies. The frontend runs on react, react-dom, and react-router-dom only.
 - Never distinguish present from absent by colour alone; the existing solid/hollow marks and text percentages must survive any layout change.

@@ -31,4 +31,6 @@
 @import './styles/shell.css';
 @import './styles/student-dashboard.css';
 @import './styles/student-attendance.css';
+@import './styles/faculty-dashboard.css';
+@import './styles/faculty-attendance.css';
 @import './styles/scaffolding.css';

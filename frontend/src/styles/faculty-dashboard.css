@@ -1,0 +1,227 @@
+/* --- Faculty dashboard (/faculty) ----------------------------------
+
+   The faculty landing page: the two places this role can go, from
+   navigation.js. Nothing here is academic data and nothing is fetched --
+   two labels and two sentences are the whole of the material.
+
+   Laid out as a pair rather than as a list, which is the difference
+   between this page and the student dashboard. A student has one
+   destination, so that page is a single door capped narrow. A faculty
+   member has two tasks and arrives at this screen mid-corridor between
+   lectures: side by side, both are read in one glance instead of one
+   after the other, and the grid gives the two cards a shared height and
+   a shared baseline, which is what makes the pair look deliberate.
+
+   What is shared with the student dashboard on purpose: the card, the
+   whole-card hit area, and the chevron. "This goes somewhere" should
+   look the same in both portals -- inventing a second affordance for the
+   same act would be difference for its own sake.
+
+   These rules replace .portal-links / .portal-link for this page only.
+   Those two classes are still rendered by /admin, which has not been
+   redesigned, and are left untouched in shell.css -- this page simply
+   stopped using them, so nothing here can reach the admin portal.
+
+   The <ul>/<li> stay: it is a list of links, and the map produces it. */
+
+.faculty-home {
+  display: grid;
+  /* Two columns wherever two fit, one where they do not.
+
+     The floor is 320 rather than 280 because 280 was derived against the
+     *card* and the card spends 70 of its width on padding and border --
+     so a 280px track sets the longer description across 210px, not 280.
+     Measured, at the width where auto-fit first takes two columns:
+
+       320px card  ->  250px measure  ->  4 lines
+       310px card  ->  240px measure  ->  4 lines
+       290px card  ->  220px measure  ->  5 lines
+       280px card  ->  210px measure  ->  6 lines
+
+     At a 280px floor the pair goes two-up at a 640px viewport, where the
+     history card runs six lines against the capture card's three and the
+     grid stretches both to the taller -- roughly 60px of dead space in
+     one card to set the other at a 26-character measure. Twenty pixels
+     narrower, at 620, the same page is one column and the same sentence
+     is two lines. The two-column layout was strictly worse than the
+     one-column layout just below it, which is the wrong way round.
+
+     320 moves the hand-off to a 720px viewport, so that band is now one
+     full-width card. Nothing at or above 768 moves: two columns of 344px
+     there either way, verified. 320 rather than 340 deliberately -- 340
+     needs 696px of grid, and a 768px window with a classic 15px
+     scrollbar only has 689, so the tablet target would flip to one
+     column on whether the OS draws a scrollbar. 320 needs 656 and clears
+     it either way.
+
+     min(...,100%) so the track can never be wider than the container it
+     is in. Without it the floor is a hard minimum: at a 300px viewport
+     the 280px track plus #root's 64px of padding took the document to
+     312px and pushed a horizontal scrollbar onto the page. That is below
+     the 360px target, but it costs one function to be correct instead of
+     coincidental. */
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+  /* Without a cap the pair would stretch to the .page 1100px and set
+     each description across ~500px, which is past a comfortable measure
+     for a sentence nobody re-reads. */
+  max-width: 860px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* .card carries the fill, the hairline and the corner. What is left here
+   is this page's: the gutter the chevron needs, and the fact that the
+   whole card is a target and so has to react to hover and to press. */
+.faculty-home-card {
+  position: relative;
+  padding: 20px 48px 20px 20px;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* The "go here" chevron, drawn from two borders rather than set as text
+   so no assistive technology announces a stray character. pointer-events
+   is off because it paints over the stretched hit area below, and a
+   click landing on the chevron would otherwise do nothing.
+
+   `top` is tuned against the label's first line -- 20px of padding plus
+   half of a 1.15rem/1.3 line box -- so changing the card's padding-top
+   would pull it off that line. */
+.faculty-home-card::after {
+  content: '';
+  position: absolute;
+  top: 27px;
+  right: 20px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  border-radius: 1px;
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition: transform 120ms ease;
+}
+
+/* The task dominates: larger and heavier than the sentence under it, and
+   in --text-h while the sentence stays at --text. Size and weight carry
+   the hierarchy, so the label is not also underlined at rest -- the card
+   already reads as a target. */
+.faculty-home-link {
+  color: var(--text-h);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-decoration: none;
+  touch-action: manipulation;
+  /* Set deliberately rather than left to the UA: the tap target is the
+     stretched ::after below, but the default highlight is drawn around
+     the *link's own* box, so a tap anywhere on the card flashed a
+     rectangle around the label alone. The :has(:active) rule further
+     down tints the whole card instead, which is the right shape. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stretches the link over the whole card, so the sentence and the
+   padding are part of the target rather than a dead margin around one
+   26px line of text. This is the single biggest fix on the page: the
+   previous markup made a two-word label the only clickable thing.
+
+   Done from CSS rather than by moving the <p> inside the <a>, which
+   would make the link's accessible name the entire paragraph. */
+.faculty-home-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+}
+
+.faculty-home-desc {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.faculty-home-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.faculty-home-card:hover .faculty-home-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.faculty-home-card:hover::after {
+  transform: translateX(3px) rotate(45deg);
+}
+
+/* Pressed feedback belongs on the card, because the card is what was
+   pressed. Where :has() is unsupported the card simply does not tint,
+   which costs nothing. */
+.faculty-home-card:has(.faculty-home-link:active) {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+/* The ring goes on the stretched overlay so it outlines the card that is
+   about to open, not the two words of the label. The outline on the <a>
+   itself is dropped only because it would draw a second, tighter ring
+   inside this one -- the replacement is strictly more visible. */
+.faculty-home-link:focus-visible {
+  outline: none;
+}
+
+.faculty-home-link:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- Narrow widths -------------------------------------------------
+
+   The same reclamation student-dashboard.css makes at 480, for the same
+   reason and one size down: the right gutter is reserved for an 8px
+   chevron, and it stops being proportionate once the card is narrow.
+
+   420 rather than 480 because this card's gutter starts at 48 where the
+   student card's starts at 56 -- it is already the tighter of the two,
+   so it stays as designed for longer. Below 420 the card is under 356px
+   and the gutter is holding better than an eighth of it for a glyph.
+
+   Measured at 360, where the card is 296px: the history description goes
+   from 5 lines to 4, and the card from 186px tall to 164 -- one line of
+   a two-card page, returned to the sentence.
+
+   Only the right gutter moves. The 20px on the other three sides is the
+   card's breathing room and is left as designed; padding-top in
+   particular is what the chevron's `top: 27px` is tuned against, so
+   changing it here would pull the chevron off the label's first line.
+   The chevron comes in with the gutter rather than staying put, so the
+   clearance between the sentence and the glyph is preserved at 12px
+   rather than merely squeezed -- the same 12px the student card keeps
+   below its own breakpoint. */
+@media (max-width: 420px) {
+  .faculty-home-card {
+    padding-right: 36px;
+  }
+
+  .faculty-home-card::after {
+    right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faculty-home-card,
+  .faculty-home-card::after {
+    transition: none;
+  }
+
+  .faculty-home-card:hover::after {
+    transform: rotate(45deg);
+  }
+}

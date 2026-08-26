@@ -17,6 +17,8 @@
   --text: #5a5364;
   --text-h: #08060d;
   --text-muted: #6f6a7c;
+  /* Also written into index.html as <meta name="theme-color">, which
+     cannot read a custom property -- change both together. */
   --bg: #fff;
   --surface: #f6f5f8;
   --border: #ded9e4;
@@ -72,6 +74,7 @@
        is 6.40 on the same surface. Light mode already passed both (5.21
        and 4.80) and is unchanged. */
     --text-muted: #868d9c;
+    /* See the note on the light --bg: index.html carries this value too. */
     --bg: #16171d;
     --surface: #1e2028;
     --border: #333642;

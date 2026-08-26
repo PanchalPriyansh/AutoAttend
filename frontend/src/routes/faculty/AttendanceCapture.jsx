@@ -181,181 +181,163 @@ function AttendanceCapture() {
 
   return (
     <AppShell title="Take Attendance">
-      <p className="hierarchy-hint">
-        Capture the room, then review what was recognised before saving. Face recognition
-        is an aid, not a verdict — the list you save is your own record of who attended,
-        so correct anything it got wrong.
-      </p>
-
-      <section className="hierarchy-level" aria-labelledby="lecture-heading">
-        <header className="hierarchy-header">
-          <h2 id="lecture-heading">Choose a lecture</h2>
-        </header>
-
-        <div className="hierarchy-form">
-          <span className="field">
-            <label htmlFor="pick-class">Class</label>
-            <select
-              id="pick-class"
-              value={classId}
-              onChange={(event) => setClassId(event.target.value)}
-            >
-              <option value="">— Select —</option>
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {describeClass(item)}
-                </option>
-              ))}
-            </select>
-          </span>
-
-          <span className="field">
-            <label htmlFor="pick-date">Date</label>
-            <input
-              id="pick-date"
-              type="date"
-              value={date}
-              max={today()}
-              onChange={(event) => setDate(event.target.value)}
-            />
-          </span>
-        </div>
-
-        {classes.length === 0 && (
-          <p className="hierarchy-hint">
-            No classes are assigned to you yet. An admin assigns classes from the academic
-            hierarchy screen.
-          </p>
-        )}
-        {selectedClass && (
-          <p className="hierarchy-hint">
-            {selectedClass.institute} · {selectedClass.department} ·{' '}
-            {selectedClass.semester} · {selectedClass.student_count} enrolled
-          </p>
-        )}
-      </section>
-
-      {error && (
-        <p role="alert" className="hierarchy-error">
-          {error}
+      <div className="fa-page">
+        <p className="fa-intro">
+          Capture the room, then review what was recognised before saving. Face recognition
+          is an aid, not a verdict — the list you save is your own record of who attended,
+          so correct anything it got wrong.
         </p>
-      )}
-      {notice && <p className="hierarchy-hint">{notice}</p>}
 
-      {classId && existing && !proposal && (
-        <p className="hierarchy-hint">
-          Attendance for this date was already recorded — {existing.present_count} present,{' '}
-          {existing.absent_count} absent. Capturing again lets you replace it.
-        </p>
-      )}
-
-      {classId && (
-        <section className="hierarchy-level" aria-labelledby="capture-heading">
-          <header className="hierarchy-header">
-            <h2 id="capture-heading">Capture the room</h2>
+        <section className="fa-panel card" aria-labelledby="lecture-heading">
+          <header className="fa-head">
+            <h2 id="lecture-heading" className="fa-eyebrow">
+              Choose a lecture
+            </h2>
           </header>
-          <ClassroomCapture onCapture={handleCapture} disabled={pending} />
-          {pending && !proposal && (
-            <p className="hierarchy-hint">Analysing the capture — this can take a moment…</p>
+
+          <div className="fa-form">
+            <span className="form-field fa-field">
+              <label htmlFor="pick-class">Class</label>
+              <select
+                id="pick-class"
+                value={classId}
+                onChange={(event) => setClassId(event.target.value)}
+              >
+                <option value="">— Select —</option>
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {describeClass(item)}
+                  </option>
+                ))}
+              </select>
+            </span>
+
+            <span className="form-field fa-field">
+              <label htmlFor="pick-date">Date</label>
+              <input
+                id="pick-date"
+                type="date"
+                value={date}
+                max={today()}
+                onChange={(event) => setDate(event.target.value)}
+              />
+            </span>
+          </div>
+
+          {classes.length === 0 && (
+            <p className="fa-empty">
+              No classes are assigned to you yet. An admin assigns classes from the academic
+              hierarchy screen.
+            </p>
+          )}
+          {selectedClass && (
+            <p className="fa-context">
+              {selectedClass.institute} · {selectedClass.department} ·{' '}
+              {selectedClass.semester} · {selectedClass.student_count} enrolled
+            </p>
           )}
         </section>
-      )}
 
-      {proposal && (
-        <>
-          <section className="hierarchy-level" aria-labelledby="review-heading">
-            <header className="hierarchy-header">
-              <h2 id="review-heading">
-                Review ({counts.present} present, {counts.absent} absent)
+        {error && (
+          <p role="alert" className="callout callout--error fa-alert">
+            <span className="callout-mark" aria-hidden="true">
+              !
+            </span>
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p className="callout fa-alert fa-alert--saved">
+            <span className="callout-mark" aria-hidden="true">
+              ✓
+            </span>
+            {notice}
+          </p>
+        )}
+
+        {classId && existing && !proposal && (
+          <p className="callout fa-alert fa-alert--warning">
+            <span className="callout-mark" aria-hidden="true">
+              !
+            </span>
+            <span>
+              Attendance for this date was already recorded — {existing.present_count}{' '}
+              present, {existing.absent_count} absent. Capturing again lets you replace it.
+            </span>
+          </p>
+        )}
+
+        {classId && (
+          <section className="fa-panel card" aria-labelledby="capture-heading">
+            <header className="fa-head">
+              <h2 id="capture-heading" className="fa-eyebrow">
+                Capture the room
               </h2>
             </header>
-
-            <p className="hierarchy-hint">
-              Analysed {proposal.frames_analyzed} frame
-              {proposal.frames_analyzed === 1 ? '' : 's'} and found{' '}
-              {proposal.detected_faces} face{proposal.detected_faces === 1 ? '' : 's'}.
-            </p>
-
-            {proposal.unknown_faces > 0 && (
-              <p role="alert" className="hierarchy-error">
-                {proposal.unknown_faces} detected face
-                {proposal.unknown_faces === 1 ? '' : 's'} did not match anyone on this
-                roster. That may be a visitor, or a student whose registered photos are
-                too different to match — check the list below before saving.
-              </p>
+            <ClassroomCapture onCapture={handleCapture} disabled={pending} />
+            {pending && !proposal && (
+              <p className="fa-busy">Analysing the capture — this can take a moment…</p>
             )}
           </section>
+        )}
 
-          <section className="hierarchy-level" aria-labelledby="recognized-heading">
-            <header className="hierarchy-header">
-              <h2 id="recognized-heading">
-                Recognised ({proposal.recognized.length})
-              </h2>
-            </header>
-            {proposal.recognized.length === 0 && (
-              <p className="hierarchy-hint">Nobody was recognised in this capture.</p>
-            )}
-            <ul className="hierarchy-items">
-              {proposal.recognized.map((row) => (
-                <StudentStatusRow
-                  key={row.student.id}
-                  student={row.student}
-                  detail={
-                    row.confidence === 'low'
-                      ? `Weak match (${row.distance}) — check this one`
-                      : `Matched (${row.distance})`
-                  }
-                  status={working[row.student.id]?.status}
-                  disabled={pending}
-                  onToggle={toggle}
-                />
-              ))}
-            </ul>
-          </section>
-
-          <section className="hierarchy-level" aria-labelledby="unrecognized-heading">
-            <header className="hierarchy-header">
-              <h2 id="unrecognized-heading">
-                Not recognised ({proposal.unrecognized.length})
-              </h2>
-            </header>
-            <p className="hierarchy-hint">
-              These students have registered faces but were not matched in this capture.
-            </p>
-            <ul className="hierarchy-items">
-              {proposal.unrecognized.map((row) => (
-                <StudentStatusRow
-                  key={row.student.id}
-                  student={row.student}
-                  detail={`${row.sample_count} registered sample${
-                    row.sample_count === 1 ? '' : 's'
-                  }`}
-                  status={working[row.student.id]?.status}
-                  disabled={pending}
-                  onToggle={toggle}
-                />
-              ))}
-            </ul>
-          </section>
-
-          {proposal.not_enrolled.length > 0 && (
-            <section className="hierarchy-level" aria-labelledby="not-enrolled-heading">
-              <header className="hierarchy-header">
-                <h2 id="not-enrolled-heading">
-                  No registered face ({proposal.not_enrolled.length})
+        {proposal && (
+          <>
+            <section className="fa-panel card fa-review" aria-labelledby="review-heading">
+              <header className="fa-head">
+                <h2 id="review-heading" className="fa-review-title">
+                  Review{' '}
+                  <span className="fa-count">
+                    ({counts.present} present, {counts.absent} absent)
+                  </span>
                 </h2>
               </header>
-              <p className="hierarchy-hint">
-                Recognition could not look for these students at all — nobody has
-                registered their face yet, so they will never be matched. Mark them by
-                hand, and ask an admin to enrol them.
+
+              <p className="fa-summary">
+                Analysed {proposal.frames_analyzed} frame
+                {proposal.frames_analyzed === 1 ? '' : 's'} and found{' '}
+                {proposal.detected_faces} face{proposal.detected_faces === 1 ? '' : 's'}.
               </p>
-              <ul className="hierarchy-items">
-                {proposal.not_enrolled.map((row) => (
+
+              {proposal.unknown_faces > 0 && (
+                <p role="alert" className="callout fa-alert fa-alert--warning">
+                  <span className="callout-mark" aria-hidden="true">
+                    !
+                  </span>
+                  <span>
+                    {proposal.unknown_faces} detected face
+                    {proposal.unknown_faces === 1 ? '' : 's'} did not match anyone on this
+                    roster. That may be a visitor, or a student whose registered photos are
+                    too different to match — check the list below before saving.
+                  </span>
+                </p>
+              )}
+            </section>
+
+            <section className="fa-cat fa-cat--matched" aria-labelledby="recognized-heading">
+              <header className="fa-head">
+                <h2 id="recognized-heading" className="fa-cat-title">
+                  Recognised{' '}
+                  <span className="fa-count">({proposal.recognized.length})</span>
+                </h2>
+              </header>
+              {proposal.recognized.length === 0 && (
+                <p className="fa-empty">Nobody was recognised in this capture.</p>
+              )}
+              <ul className="fa-roster">
+                {proposal.recognized.map((row) => (
                   <StudentStatusRow
                     key={row.student.id}
                     student={row.student}
-                    detail="Not enrolled for recognition"
+                    detail={
+                      row.confidence === 'low' ? (
+                        <span className="pill pill--warning fa-flag">
+                          Weak match ({row.distance}) — check this one
+                        </span>
+                      ) : (
+                        `Matched (${row.distance})`
+                      )
+                    }
                     status={working[row.student.id]?.status}
                     disabled={pending}
                     onToggle={toggle}
@@ -363,25 +345,94 @@ function AttendanceCapture() {
                 ))}
               </ul>
             </section>
-          )}
 
-          <div className="hierarchy-form">
-            <button type="button" onClick={() => persist(false)} disabled={pending}>
-              Save attendance
-            </button>
-            {conflict && (
+            <section
+              className="fa-cat fa-cat--unmatched"
+              aria-labelledby="unrecognized-heading"
+            >
+              <header className="fa-head">
+                <h2 id="unrecognized-heading" className="fa-cat-title">
+                  Not recognised{' '}
+                  <span className="fa-count">({proposal.unrecognized.length})</span>
+                </h2>
+              </header>
+              <p className="fa-cat-note">
+                These students have registered faces but were not matched in this capture.
+              </p>
+              <ul className="fa-roster">
+                {proposal.unrecognized.map((row) => (
+                  <StudentStatusRow
+                    key={row.student.id}
+                    student={row.student}
+                    detail={`${row.sample_count} registered sample${
+                      row.sample_count === 1 ? '' : 's'
+                    }`}
+                    status={working[row.student.id]?.status}
+                    disabled={pending}
+                    onToggle={toggle}
+                  />
+                ))}
+              </ul>
+            </section>
+
+            {proposal.not_enrolled.length > 0 && (
+              <section
+                className="fa-cat fa-cat--unenrolled"
+                aria-labelledby="not-enrolled-heading"
+              >
+                <header className="fa-head">
+                  <h2 id="not-enrolled-heading" className="fa-cat-title">
+                    No registered face{' '}
+                    <span className="fa-count">({proposal.not_enrolled.length})</span>
+                  </h2>
+                </header>
+                <p className="fa-cat-note">
+                  Recognition could not look for these students at all — nobody has
+                  registered their face yet, so they will never be matched. Mark them by
+                  hand, and ask an admin to enrol them.
+                </p>
+                <ul className="fa-roster">
+                  {proposal.not_enrolled.map((row) => (
+                    <StudentStatusRow
+                      key={row.student.id}
+                      student={row.student}
+                      detail={
+                        <span className="pill fa-flag fa-flag--muted">
+                          Not enrolled for recognition
+                        </span>
+                      }
+                      status={working[row.student.id]?.status}
+                      disabled={pending}
+                      onToggle={toggle}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <div className="fa-actions">
               <button
                 type="button"
-                className="danger"
-                onClick={() => setReplacePrompt(true)}
+                className="btn btn--primary fa-save"
+                onClick={() => persist(false)}
                 disabled={pending}
               >
-                Replace the existing record
+                Save attendance
               </button>
-            )}
-          </div>
-        </>
-      )}
+              {conflict && (
+                <button
+                  type="button"
+                  className="btn fa-danger"
+                  onClick={() => setReplacePrompt(true)}
+                  disabled={pending}
+                >
+                  Replace the existing record
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={replacePrompt}

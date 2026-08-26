@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Tints the browser chrome to match the page. Two tags because the
+         app follows the system palette; these are the light and dark --bg
+         values from src/styles/tokens.css, and a meta tag cannot read a
+         custom property, so changing --bg means changing these. -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16171d" media="(prefers-color-scheme: dark)" />
     <title>AutoAttend</title>
   </head>
   <body>

@@ -15,6 +15,36 @@ body {
   padding: 32px;
 }
 
+/* The outer gutter is the single largest constraint on every narrow
+   layout in the app, because it is charged twice and before anything
+   else gets a say. At 360px the 32px above spends 64px -- 17.8% of the
+   viewport -- leaving 296px for the header and the page inside it. The
+   narrow-width fixes in student-dashboard.css and faculty-dashboard.css
+   are both downstream of it: they reclaim a card's inner gutter because
+   the outer one had already taken the room.
+
+   16px here hands 32px back to all ten shelled pages at once, and 24px
+   top and bottom keeps the header from starting the screen with a third
+   of a phone's worth of empty space. Desktop and tablet are untouched --
+   32px is 8.3% at 768px, which is a gutter rather than a tax.
+
+   The insets go through max() for the same reason login.css does it: on
+   a notched phone held sideways the header and the page would otherwise
+   sit under the cutout. #root pads the <header> as well as <main>, since
+   AppShell renders them as siblings, so this is the one place that has
+   to be right for both. Where the insets are 0 -- every desktop browser,
+   and every phone in portrait without a cutout -- these resolve to the
+   plain 24/16 values.
+
+   Login is not affected: it zeroes this padding entirely (see the
+   :has(.auth-screen) rule in login.css) and declares its own gutters. */
+@media (max-width: 480px) {
+  #root {
+    padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+}
+
 h1 {
   color: var(--text-h);
   font-weight: 500;

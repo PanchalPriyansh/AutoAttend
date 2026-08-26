@@ -42,6 +42,33 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* The header stacks at narrow widths, and each row it wraps onto costs
+   about 39px. Measured at 360px it is three rows -- brand, nav, user --
+   and 138px tall, which puts the <h1> a third of a phone screen down.
+
+   Two of those rows can be merged only by moving the nav visually below
+   the user block, and that is not done here: the DOM order is brand,
+   nav, user, so reordering would send the tab sequence top-left, down to
+   the bottom row, then back up to Log out. The frame is careful about
+   focus everywhere else and should not buy 39px with it. Merging them
+   honestly needs the collapsible nav this project has deferred.
+
+   What is safe is the rhythm. The 24px column gap is generous for a
+   phone: at 414px it alone is what pushes the nav (271px) past the brand
+   (95px) onto its own row, so halving it buys back a whole row there.
+   Below that the three rows remain, but tighter -- 8px between them, and
+   less air under the rule -- which is worth about 20px on every page.
+
+   Nothing above 480px is touched: the header is a single 61px row from
+   700px up and already correct. */
+@media (max-width: 480px) {
+  .app-header {
+    gap: 8px 12px;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+}
+
 .app-brand {
   color: var(--text-h);
   font-weight: 500;
@@ -88,7 +115,22 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  /* A flex item will not shrink below its content unless told it may, so
+     without this a long name pushes Log out toward the edge instead of
+     giving way to it. The button is the control; the name is a label. */
+  min-width: 0;
   font-size: 0.85rem;
+}
+
+/* The name, which is the only unbounded string in the frame -- it comes
+   from the account and nothing caps its length. It ellipses rather than
+   wrapping, because wrapping would add a row to a header that is already
+   three rows deep on a phone. No class of its own: AppShell renders a
+   bare <span> here and this is styling, not a change to the markup. */
+.app-user span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The logout button has no rule here any more: it is `btn btn--secondary`
@@ -136,9 +178,10 @@
 }
 
 /* The landing pages' list of destinations, rendered from navigation.js.
-   Still temporary, and still only for /admin and /faculty -- /student
-   has been redesigned and now renders .student-home-* instead, so this
-   block no longer reaches it. Not a general-purpose card. */
+   Still temporary, and now only for /admin -- /student and /faculty have
+   both been redesigned and render .student-home-* and .faculty-home-*
+   instead, so this block no longer reaches either of them. It dies with
+   the admin group. Not a general-purpose card. */
 .portal-links {
   display: flex;
   flex-direction: column;

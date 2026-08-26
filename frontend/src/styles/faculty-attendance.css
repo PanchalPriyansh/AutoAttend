@@ -1,0 +1,684 @@
+/* --- Take attendance (/faculty/attendance) -------------------------
+
+   The review screen: a faculty member stands in front of a class with a
+   few minutes before the next lecture, scanning for the rows recognition
+   probably got wrong. Everything below serves that scan.
+
+   The page is four categories, and their differences are the whole
+   point of it:
+
+     1. Recognised      matched -- but a weak match is the row most
+                        likely to be wrong, so it is the one row on the
+                        page that carries a bordered mark.
+     2. Not recognised  has registered faces, was not matched today.
+     3. No registered   recognition could not look for them at all.
+        face            Never matchable until an admin enrols them.
+     4. Unknown faces   a count, as an alert.
+
+   Before this file they were three identical stacks of identical rows
+   under three identical uppercase headings, and the weak-match warning
+   was a substring of the same muted metadata line as the email. Each
+   category now has a rail down its list -- solid --success, solid
+   --warning, dashed --text-muted -- and the rail is redundant with the
+   heading, the per-category sentence and, for a weak match, the row's
+   own mark. Nothing here is told apart by colour alone.
+
+   Ownership: this page used to borrow .hierarchy-*, .field, .user-*,
+   .face-capture-live and .danger from scaffolding.css, all of which are
+   still rendered by admin screens nobody has designed. The markup was
+   renamed onto .fa-* hooks rather than those rules being restyled
+   underneath admin -- the same move /student/attendance made onto .sa-*.
+   No rule in scaffolding.css was changed, so it does not shrink here; it
+   shrinks when the admin group lands.
+
+   .card, .btn, .callout, .pill and .form-field come from components.css
+   and are composed, never restyled -- every override below is on one of
+   this page's own selectors.
+
+   .fa-row* is deliberately shared: StudentStatusRow renders on the
+   history screen too, which is still on scaffolding. Box layout for a
+   row is therefore scoped under .fa-roster (this page's <ul>), so it
+   cannot fight `.hierarchy-items li` over there; typography and the
+   present/absent fill are left unscoped, because both are improvements
+   history should have now rather than after its own redesign.
+
+   Vertical rhythm: 20 between sections, 12 inside a panel, 8 and below
+   within a group. Rows are tight (a 4px-gapped 8px-padded line) because
+   there are dozens of them.
+
+   No transition is declared in this file, so there is nothing here for
+   prefers-reduced-motion to switch off. The one animated thing on the
+   page is .btn's own colour fade, already guarded in components.css. */
+
+.fa-page {
+  display: grid;
+  /* minmax(0, 1fr), not the implicit `auto`, and it is load-bearing. An
+     auto grid track is floored at the min-content width of its widest
+     item, and the widest item here is a card containing form controls: a
+     <select> is as wide as its longest option, and an <input type=file>
+     as wide as the button and filename the browser draws inside it.
+     .fa-field caps that at 340px, so the whole track was floored at 340
+     + the card's 42 of padding and border = 382 -- wider than a phone.
+     Measured at 360: the document was 398px against a 345px viewport,
+     scrolling every card, callout and roster sideways, and it got worse
+     the narrower the screen. A 0 minimum lets the track shrink and the
+     fields inside it follow. Nothing changes above 413px, where the
+     track already had room for its 382px floor. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  /* Narrower than .page's 1100. A row puts the student's name at the
+     left edge and their toggle at the right, and past about 820 those
+     two stop reading as one row -- which matters more here than on any
+     other screen, because the toggle is what the name is being checked
+     against. */
+  max-width: 820px;
+}
+
+.fa-intro {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* --- Panels and headings -------------------------------------------
+
+   Two heading treatments under the shell's <h1>, the same split the
+   student attendance screen makes: a small caps label for a structural
+   section ("Choose a lecture", "Capture the room"), and a plain title at
+   a readable size for the parts that are content -- the running count
+   and the three category names. Those three are what the page is about,
+   so they are not shrunk into micro-caps. */
+
+.fa-panel {
+  /* .card carries the fill, the hairline and the corner. */
+  margin: 0;
+}
+
+.fa-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+.fa-eyebrow {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fa-review-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fa-cat-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* The parenthetical inside a heading -- the counts. Set back to body
+   weight and colour so the heading reads as "**Review** (12 present, 8
+   absent)" rather than as one long bold string. Tabular figures because
+   the two numbers change on every toggle and should not shift the words
+   after them. */
+.fa-count {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The lecture picker --------------------------------------------- */
+
+.fa-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 0;
+}
+
+/* .form-field carries the label and the control chrome. The fields
+   share the strip rather than filling it: a date input set across 700px
+   looks like a mistake. */
+.fa-field {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 340px;
+}
+
+/* Windows renders a native <select>'s popup from the control's own
+   colours, and an unset background there comes out white-on-white in
+   dark mode. .form-field already sets them on the select; this states
+   them on the options too, which is the part the OS draws. */
+.fa-field select option {
+  color: var(--text-h);
+  background: var(--bg);
+}
+
+/* The selected class's place in the hierarchy -- context, not content,
+   so it recedes below the controls it describes. */
+.fa-context {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* --- Empty states ---------------------------------------------------
+
+   Written out rather than left as a bare sentence: "Nobody was
+   recognised in this capture" at the body size, unstyled, reads as a
+   half-drawn screen rather than as an answer. The dashed box says the
+   list is empty on purpose. */
+.fa-empty {
+  margin: 12px 0 0;
+  padding: 16px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Messages -------------------------------------------------------
+
+   All three used to be .hierarchy-hint or .hierarchy-error: a saved
+   confirmation, a "this date already has attendance" warning and a
+   genuine request failure were a run of grey or red text at the same
+   size, and the unknown-faces alert painted four red sentences over a
+   capture that had actually worked.
+
+   Now: red is a failure, amber is a caution, green is a completed save,
+   and each is a bordered box with a mark rather than coloured text. The
+   red one is .callout--error from components.css. The other two are
+   page-scoped on purpose -- a --success and a --warning callout variant
+   would be invented from one page rather than extracted from two, so
+   they stay here as evidence until the history screen (which has its
+   own "Correction saved" notice) provides the second implementation. */
+
+.fa-alert {
+  line-height: 1.45;
+}
+
+.fa-alert--warning {
+  color: var(--warning);
+  background: var(--warning-weak);
+  border-color: var(--warning);
+}
+
+.fa-alert--warning .callout-mark {
+  color: var(--warning-weak);
+  background: var(--warning);
+}
+
+.fa-alert--saved {
+  color: var(--success);
+  background: var(--success-weak);
+  border-color: var(--success);
+}
+
+.fa-alert--saved .callout-mark {
+  color: var(--success-weak);
+  background: var(--success);
+}
+
+/* --- Capture --------------------------------------------------------- */
+
+.fa-capture .fa-alert {
+  margin-bottom: 12px;
+}
+
+/* A file input is the one control components.css cannot fully dress,
+   because the browser draws a button inside it. Sized down from the
+   field default so the two file rows do not tower over the date picker
+   beside them. */
+.fa-file input[type='file'] {
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* --surface against the input's --bg fill -- the inverse of the card it
+   sits on, which is the same relationship .card .btn--secondary uses.
+   6px rather than --radius-sm: this corner is nested inside the input's
+   8px one, and matching it would make the two look mis-stacked. */
+.fa-file input[type='file']::file-selector-button {
+  font: inherit;
+  font-size: 0.8rem;
+  margin-right: 10px;
+  padding: 5px 10px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fa-file input[type='file']:hover:not(:disabled)::file-selector-button {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+/* Everything on this panel disables together while a capture is being
+   analysed, and a file input gives no sign of it on its own. */
+.fa-file input[type='file']:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.fa-btn {
+  flex: 0 0 auto;
+}
+
+.fa-live {
+  margin-top: 12px;
+}
+
+/* Constrains the live preview. Without a width the <video> renders at
+   the camera's native resolution and pushes the capture button off
+   screen. (The admin face-enrolment screen has its own copy of this in
+   scaffolding.css, under .face-capture-live, and keeps it.) */
+.fa-live video {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* The webcam's two buttons. It composes .fa-form for the wrap and the
+   gap, but .fa-form is a row of *fields* and aligns its items to
+   flex-end so that a label stacked over a control lines up with a bare
+   button beside it. There are no labels here, so that alignment has
+   nothing to do and the row is centred instead. */
+.fa-live-actions {
+  align-items: center;
+  gap: 12px;
+}
+
+/* The state that explains why every control on the panel just went
+   dim. A bordered strip rather than a grey caption, because it is a
+   state and not a footnote. */
+.fa-busy {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  font-size: 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.fa-note {
+  margin: 12px 0 0;
+  max-width: 68ch;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* --- Review summary -------------------------------------------------- */
+
+.fa-summary {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fa-review .fa-alert {
+  margin-top: 12px;
+}
+
+/* --- The four categories ---------------------------------------------
+
+   Not cards. Six stacked panels would flatten the page into one texture,
+   and these three lists are the page's content rather than three more
+   boxes on it -- so the panels above stay cards and the rosters are
+   led by a rail instead.
+
+   The rail runs the full height of the list, so a row two screens down
+   still says which category it belongs to. It is redundant three times
+   over: the heading names the category, categories 2 and 3 each carry a
+   sentence, and every row states its own condition in words. */
+
+.fa-cat {
+  margin: 0;
+}
+
+.fa-cat .fa-head {
+  margin-bottom: 8px;
+}
+
+.fa-cat-note {
+  margin: 0 0 10px;
+  max-width: 68ch;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.fa-roster {
+  margin: 0;
+  padding: 0 0 0 8px;
+  list-style: none;
+  border-left: 3px solid var(--border);
+}
+
+.fa-cat--matched .fa-roster {
+  border-left-color: var(--success);
+}
+
+.fa-cat--unmatched .fa-roster {
+  border-left-color: var(--warning);
+}
+
+/* Dashed, not a third hue: "recognition never looked here" is a
+   different kind of fact from "recognition looked and did not find
+   them", and a broken line says that to anyone, including someone who
+   cannot tell the two solid rails apart. */
+.fa-cat--unenrolled .fa-roster {
+  border-left-style: dashed;
+  border-left-color: var(--text-muted);
+}
+
+/* --- A student row ----------------------------------------------------
+
+   Rendered by StudentStatusRow, which the history screen also uses. The
+   box below is scoped to this page's <ul> on purpose: over there the
+   <ul> is still scaffolding's .hierarchy-items, whose `li` rule would
+   win on specificity and load order, and a half-applied box is worse
+   than none. Everything outside this scope is typography and state,
+   which history gains cleanly. */
+
+.fa-roster .fa-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tracking a name across to its toggle is the whole physical act of
+   using this screen, and the row is up to 800px wide. */
+.fa-roster .fa-row:hover {
+  background: var(--surface);
+}
+
+/* Deactivated accounts stay in the list and are marked, because the
+   roster is the roster -- but they are pushed back, since a deactivated
+   student is not somebody the faculty member is looking for. */
+.fa-roster .fa-row--inactive {
+  border-bottom-style: dashed;
+}
+
+.fa-row-identity {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The name dominates: a whole step larger than the line under it,
+   heavier, and in --text-h while the metadata drops to --text-muted.
+   Before this the name and the email were the same size and one shade
+   apart. overflow-wrap because a name is unbounded input. */
+.fa-row-name {
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* (0,2,0), so it wins wherever the row renders -- including inside
+   scaffolding's .hierarchy-items on the history screen, which no longer
+   matches its own .is-inactive rule. */
+.fa-row--inactive .fa-row-name {
+  color: var(--text);
+  text-decoration: line-through;
+}
+
+.fa-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.fa-row-email {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* What recognition has to say about this row. Its own element rather
+   than a " · "-joined tail on the email, which is what let the most
+   important sentence on the page -- "Weak match (0.58) — check this
+   one" -- render at the same size and colour as an address. Tabular
+   figures keep the distances in a column down the list. */
+.fa-row-detail {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Flags ------------------------------------------------------------
+
+   A .pill, composed. The weak match takes --warning, which is the one
+   bordered mark in the recognised list and so the one row that catches
+   the eye while scrolling past forty confident matches. The pill states
+   its own condition in words, so the fill only agrees with the sentence
+   already there. */
+
+.fa-flag {
+  /* The weak-match label is a sentence, not a word, and must be allowed
+     to wrap rather than push the toggle off the row. */
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* Neutral, for the two flags that are facts rather than warnings: a
+   deactivated account, and a student recognition could not look for.
+   Page-scoped -- a third .pill variant belongs in components.css only
+   once two designed pages want it. */
+.fa-flag--muted {
+  color: var(--text-h);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+/* --- The present/absent toggle ---------------------------------------
+
+   The single most important control on the screen: a row's status is
+   whatever this button says, across a roster of dozens, and it used to
+   be the same grey box in both states with only the word inside it
+   changing.
+
+   Present is solid, absent is hollow -- the same encoding the student
+   attendance screen uses for a lecture mark, and the reason the state
+   survives without colour. The label spells out the state and the act
+   ("Present — mark absent"), which is what the fill agrees with.
+
+   .fa-toggle--* is written at (0,2,0) deliberately: it is the one thing
+   in this file that should also win inside scaffolding's
+   `.hierarchy-level button` on the history screen, where flipping a
+   wrongly-marked student is that screen's entire job. Chrome there stays
+   scaffolding's until history is redesigned. */
+
+.fa-toggle {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* --bg on --success is 7.4:1 in light and higher in dark -- the same
+   pair .pill--success is built from, inverted. */
+.fa-toggle.fa-toggle--present {
+  color: var(--bg);
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.fa-toggle.fa-toggle--absent {
+  color: var(--text-h);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.fa-toggle:hover:not(:disabled) {
+  border-color: var(--text-h);
+}
+
+/* Every toggle on the page disables together while a capture is being
+   analysed or a save is in flight; .btn already dims them. */
+.fa-toggle:disabled {
+  cursor: default;
+}
+
+/* --- Save ------------------------------------------------------------- */
+
+.fa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Larger than a row's toggle without reaching for .btn--lg, which is
+   login's size and says so. This is the end of the task, and it should
+   not look like the forty buttons above it. */
+.fa-save {
+  padding: 10px 18px;
+  font-size: 0.9rem;
+}
+
+/* Overwriting a recorded lecture is destructive, so the button says so
+   in its own colour as well as its label -- and stays hollow, because
+   it is the secondary of the two actions here. */
+.fa-danger {
+  color: var(--danger);
+  background: var(--bg);
+  border-color: var(--danger);
+  font-weight: 500;
+}
+
+.fa-danger:hover:not(:disabled) {
+  background: var(--danger-weak);
+}
+
+/* --- The capture panel in a narrow card, to 520px --------------------
+
+   "Upload a photo", "Upload a short video" and "Use camera" share one
+   wrapping strip. Each field asks for 200px and the strip is
+   viewport - 106, so below 522 the two fields stop fitting on one line
+   -- and what wraps is not one field but the second field *with the
+   camera button beside it*. The result was two identical file inputs at
+   visibly different widths: 340 and 282 at 480, 340 and 216 at 360, with
+   the chosen filename truncated in the narrower one and not in the
+   other. A full-width basis puts each field on its own line and the
+   button on its own, which is also the order they are read in. */
+@media (max-width: 520px) {
+  .fa-capture-form .fa-field {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+/* --- The webcam on a phone, to 480px ---------------------------------
+
+   "Take photo" is the shutter -- it is pressed with the phone held up at
+   a room, one-handed, and it is the only control on the page that is
+   used without looking at it. At this width it takes the full measure
+   under the preview instead of sitting at 104px beside "Stop camera".
+   480 rather than 450 because that is where base.css drops the outer
+   gutter to 16px and the preview goes near edge-to-edge; above it the
+   two buttons still sit comfortably on one line. */
+@media (max-width: 480px) {
+  .fa-live-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --- The narrow roster, to 450px --------------------------------------
+
+   The realistic worst case for this page is forty rows on a phone, held
+   by somebody standing in front of a class hunting for the ones
+   recognition got wrong. This is the rule that serves that, and nothing
+   above 450 is touched.
+
+   The row is `minmax(0, 1fr) auto`, and the `auto` track is the toggle,
+   which is set nowrap and so takes the width of its longest label
+   ("Present -- mark absent") -- 191px, at every viewport, whatever else
+   is on the row. Everything the screen is actually scanned for is in the
+   other track. Below 480 base.css drops the outer gutter to 16px a side,
+   so what the name gets is viewport - 32 - 11 (the rail and its padding)
+   - 16 (the row's padding) - 16 (the column gap) - 191 = viewport - 266.
+
+   450 is where that falls under 184px -- narrower than the button beside
+   it. Past that the name has less room than the control attached to it,
+   and it collapses fast: 148px at 414, 94px at 360, 54px at 320, where
+   a name was setting eleven lines deep beside a button that had not
+   given up a pixel.
+
+   It is also, within a few pixels, where stacking stops costing height
+   and starts saving it. Measured over the twelve-row recognised list,
+   stacked against flat: 1583 vs 1563 at 440, 1583 vs 1769 at 414, 1666
+   vs 2235 at 360, 1840 vs 3653 at 320. Scaled to forty rows that is
+   6100 against 12200 at 320. Above 450 the flat row is both shorter and
+   still readable, which is why the breakpoint is here and not up at 540
+   with the one below: at 540 the name still has 243px, and stacking
+   there would make a forty-row list 500px longer for nothing.
+
+   Stacked, the identity takes the full width and the toggle drops
+   beneath it. The toggle keeps its whole label, its 44px height and its
+   solid/hollow fill; the rail, the hairlines and the row order are
+   untouched. Nothing about the design changes except which of the two
+   things on the row gets the width.
+
+   Scoped to .fa-roster on purpose, exactly as the row's box layout
+   further up this file is. StudentStatusRow also renders on
+   /faculty/attendance/history, inside scaffolding's .hierarchy-items,
+   which is a wrapping flex row: grid-template-columns would apply to
+   nothing there, and a bare .fa-toggle rule would be a change to a page
+   nobody has designed yet. History already drops its own button onto a
+   second line once .fa-row-identity cannot get its 200px basis, and is
+   unaffected by any of this. */
+@media (max-width: 450px) {
+  .fa-roster .fa-row {
+    grid-template-columns: minmax(0, 1fr);
+    /* 8 rather than the 4 the two-column row uses: stacked, this gap is
+       between the identity and its control, not between two lines of
+       the same block. */
+    gap: 8px;
+  }
+
+  /* Its natural width, not the full row. A column of hollow and solid
+     chips down the left edge reads as a status column; forty full-width
+     bars read as forty dividers. */
+  .fa-roster .fa-row .fa-toggle {
+    justify-self: start;
+  }
+}

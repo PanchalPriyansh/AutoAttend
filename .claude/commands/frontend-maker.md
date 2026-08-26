@@ -45,6 +45,7 @@ Invoke the **autoattend-css-designer** agent with:
 - The page name, route, entry file, and the components it renders
 - An instruction to load the `frontend-design` skill first
 - A reminder that styling is split across `frontend/src/styles/` with `index.css` as the `@import` manifest, that it is still one global namespace so page-scoped selectors are preferred, that any shared-rule change must be reported with the pages it affects, and that the page's rules should be carved out of `scaffolding.css` into `styles/<page>.css`
+- A reminder that `styles/components.css` holds the shared vocabulary (`.card`, `.btn`, `.callout`, `.pill`, `.form-field`), that the page **composes** it and adds its own hook alongside for what is page-specific, that a primitive is never restyled to suit one page, and that wanting a sixth primitive is a report note rather than permission to add one. When the page renders `className="field"` (scaffolding's, not the vocabulary's), renaming it to `form-field` is part of the redesign
 - A reminder that colours come from the design tokens only, and that behaviour must not change
 
 Wait for it to finish.

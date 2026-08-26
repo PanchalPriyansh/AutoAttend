@@ -5,11 +5,13 @@ import { navigationFor } from '../navigation'
 function FacultyDashboard() {
   return (
     <AppShell title="Faculty Dashboard">
-      <ul className="portal-links">
+      <ul className="faculty-home">
         {navigationFor('faculty').map((item) => (
-          <li className="portal-link" key={item.to}>
-            <Link to={item.to}>{item.label}</Link>
-            <p>{item.description}</p>
+          <li className="faculty-home-card card" key={item.to}>
+            <Link className="faculty-home-link" to={item.to}>
+              {item.label}
+            </Link>
+            <p className="faculty-home-desc">{item.description}</p>
           </li>
         ))}
       </ul>

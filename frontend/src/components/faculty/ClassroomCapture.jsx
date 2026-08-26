@@ -16,6 +16,11 @@ const VIDEO_TYPES = 'video/mp4,video/webm,video/quicktime'
  *
  * Nothing here uploads or keeps anything — the capture is handed straight out
  * and the canvas it came from is discarded.
+ *
+ * Styled by styles/faculty-attendance.css. It used to render .face-capture,
+ * .face-capture-live and .hierarchy-* -- all shared with the admin face
+ * enrolment screen, which has not been designed -- so those were renamed onto
+ * this page's own .fa-* hooks rather than restyled underneath admin.
  */
 function ClassroomCapture({ onCapture, disabled }) {
   const { videoRef, active, error, start, stop, capturePhoto } = useCamera()
@@ -35,15 +40,18 @@ function ClassroomCapture({ onCapture, disabled }) {
   }
 
   return (
-    <div className="face-capture">
+    <div className="fa-capture">
       {error && (
-        <p role="alert" className="hierarchy-error">
+        <p role="alert" className="callout callout--error fa-alert">
+          <span className="callout-mark" aria-hidden="true">
+            !
+          </span>
           {error}
         </p>
       )}
 
-      <div className="hierarchy-form">
-        <span className="field">
+      <div className="fa-form fa-capture-form">
+        <span className="form-field fa-field fa-file">
           <label htmlFor="classroom-photo">Upload a photo</label>
           <input
             id="classroom-photo"
@@ -54,7 +62,7 @@ function ClassroomCapture({ onCapture, disabled }) {
           />
         </span>
 
-        <span className="field">
+        <span className="form-field fa-field fa-file">
           <label htmlFor="classroom-video">Upload a short video</label>
           <input
             id="classroom-video"
@@ -66,27 +74,27 @@ function ClassroomCapture({ onCapture, disabled }) {
         </span>
 
         {!active && (
-          <button type="button" onClick={start} disabled={disabled}>
+          <button type="button" className="btn btn--secondary fa-btn" onClick={start} disabled={disabled}>
             Use camera
           </button>
         )}
       </div>
 
       {active && (
-        <div className="face-capture-live">
+        <div className="fa-live">
           <video ref={videoRef} autoPlay playsInline muted />
-          <div className="hierarchy-form">
-            <button type="button" onClick={takePhoto} disabled={disabled}>
+          <div className="fa-form fa-live-actions">
+            <button type="button" className="btn btn--primary fa-btn" onClick={takePhoto} disabled={disabled}>
               Take photo
             </button>
-            <button type="button" onClick={stop}>
+            <button type="button" className="btn btn--secondary fa-btn" onClick={stop}>
               Stop camera
             </button>
           </div>
         </div>
       )}
 
-      <p className="hierarchy-hint">
+      <p className="fa-note">
         Capture the whole room, well lit, with faces turned towards the camera. A few
         seconds of video gives each student several chances to be seen. The photo or
         video is analysed and discarded — it is never stored.

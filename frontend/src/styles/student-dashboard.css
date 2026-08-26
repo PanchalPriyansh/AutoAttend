@@ -6,9 +6,9 @@
    that never gets a second row.
 
    These rules replace .portal-links / .portal-link for this page only.
-   Those two classes are still rendered by /admin and /faculty and are
-   left untouched in shell.css; the student page simply stopped using
-   them, so nothing here can reach the other two landing pages.
+   That class is still rendered by /admin and is left untouched in
+   shell.css; the student page simply stopped using them, so nothing here
+   can reach the other landing pages.
 
    The <ul>/<li> stay because they are what the map produces, and the
    grid below still stacks correctly if the role ever gains a second
