@@ -5,10 +5,13 @@
    expected to be replaced when the groups reach it.
 
    So keep it short. It exists so the header, the nav, and the current
-   page are legible in the meantime -- not to establish a look, and not
-   to become a component vocabulary. There is deliberately no .btn,
-   .card, .input, or spacing scale here: those should be extracted from
-   pages that have actually been designed, not guessed at up front. */
+   page are legible in the meantime -- not to establish a look.
+
+   The vocabulary this file was told not to invent now exists, extracted
+   from the pages that have actually been designed: see components.css.
+   The header's logout button is the one thing here that turned out to be
+   a primitive, and it now composes .btn .btn--secondary rather than
+   declaring its own chrome. */
 
 /* Hidden by .visually-hidden (further down, and reused rather than
    duplicated) until focused; this undoes that hiding and puts the link
@@ -88,33 +91,9 @@
   font-size: 0.85rem;
 }
 
-.app-logout {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 6px 12px;
-  color: var(--text-h);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-/* Hover raises contrast rather than dropping it: the border takes the
-   accent and the fill takes the accent tint. Same pairing the student
-   dashboard card uses, so the two agree about what "hovered" looks
-   like. */
-.app-logout:hover {
-  background: var(--accent-weak);
-  border-color: var(--accent);
-}
-
-.skip-link:focus-visible,
-.app-brand:focus-visible,
-.app-nav a:focus-visible,
-.app-logout:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
+/* The logout button has no rule here any more: it is `btn btn--secondary`
+   from components.css, with nothing about it specific to the header. The
+   focus ring is likewise global now, in base.css. */
 
 .page {
   max-width: 1100px;

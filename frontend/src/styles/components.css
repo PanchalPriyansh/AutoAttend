@@ -1,0 +1,293 @@
+/* --- The component vocabulary --------------------------------------
+
+   The pieces that two designed pages had each built for themselves.
+
+   Two rules govern this file:
+
+     1. A primitive is added here only when two designed pages already
+        implement it. Everything below was extracted from shipped rules
+        in login.css, shell.css, student-dashboard.css and
+        student-attendance.css -- not designed up front. `12-app-shell`
+        deliberately refused to write this file for exactly that reason,
+        and it was right to: a vocabulary guessed before any page has
+        been designed is a guess. The one exception is .pill, marked as
+        such where it is defined.
+
+     2. A page never restyles a primitive to suit itself. `.card {
+        padding: 16px }` in a page file silently redesigns login and both
+        student pages. Override on the page's own selector instead --
+        `.sa-class { padding: 16px }` -- which works because every page
+        file is imported after this one. Changing a rule *here* is a
+        deliberate change to every page using it, and the pages should be
+        named when it happens.
+
+   A page composes these and keeps its own hook alongside for what is
+   page-specific: `className="btn btn--secondary sa-toggle"`, where the
+   primitive carries the fill and the hover and .sa-toggle carries the
+   nowrap and the open-class tint. Layout, positioning, page-only states
+   and anything data-driven stay on the page hook.
+
+   Spacing here is the 2/4/8/12/16/20/32 rhythm the designed pages
+   converged on, and radii the 8/12/999 one -- which is tokenised
+   (--radius-*) because it is a constant shared between primitives.
+   Spacing is deliberately NOT tokenised: `--space-3` in place of `12px`
+   costs more in readability than it returns in a project this size, and
+   a margin is a per-layout decision in a way a corner is not.
+
+   Three places below are order-dependent, and are marked. */
+
+/* --- Card ------------------------------------------------------------
+
+   Extracted from .auth-card, .student-home-card, .sa-card and .sa-class,
+   which had all four arrived at the same --surface fill, hairline border
+   and 12px corner. --surface reads as raised in both palettes: darker
+   than --bg in light, lighter than it in dark.
+
+   No box-shadow: of the four, only login's card carries one at rest, and
+   it keeps it in login.css. Padding is here because 20px is what three of
+   the four use, and it is also the declaration pages most often override
+   -- login takes 32, a class row takes 16, both from their own files. */
+.card {
+  box-sizing: border-box;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* --- Button ----------------------------------------------------------
+
+   Extracted from .auth-submit (primary), and .app-logout and .sa-toggle
+   (secondary, and near-identical to each other).
+
+   The base is chrome and size with no fill, so that a variant decides
+   only what colour the button is. It deliberately sets no font-weight:
+   both secondary buttons ship at the inherited 400, and only the primary
+   is 500. */
+.btn {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 8px 14px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  /* Drops the ~300ms tap delay mobile browsers add while they wait to see
+     whether a tap is a double-tap zoom. */
+  touch-action: manipulation;
+  /* Set deliberately rather than left to the UA, whose default grey box
+     ignores the radius and flashes a rectangle over a rounded button. */
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+/* Opacity only. The one disabled button in the project is login's submit,
+   which is disabled solely while the request is in flight and says
+   "Logging in..." at the same time -- the dimming agrees with a label that
+   already carries the state. Its `cursor: progress` says which kind of
+   wait it is and stays in login.css, because it is the only button that
+   means it. */
+.btn:disabled {
+  opacity: 0.65;
+}
+
+/* --bg is the right foreground on --accent in both palettes: #fff on
+   #4c3fb5 is 7.8:1 in light, #16171d on #a5b4fc is 9.0:1 in dark. */
+.btn--primary {
+  color: var(--bg);
+  font-weight: 500;
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* A secondary button takes the fill the surface under it does not, so it
+   stays distinct either way: --surface out on the page, --bg on a card.
+   That is the relationship the shell's logout button and the student
+   page's toggle each arrived at independently, and the .card rule below
+   is what makes it one rule rather than two buttons. */
+.btn--secondary {
+  color: var(--text-h);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+/* ORDER-DEPENDENT: this and .btn--secondary:hover are both (0,2,0), so
+   source order decides. The hover must come second or a secondary button
+   on a card would keep its resting fill while hovered. */
+.card .btn--secondary {
+  background: var(--bg);
+}
+
+/* Hover raises contrast rather than dropping it -- the accent border plus
+   the accent tint, which is also what the student dashboard's card does,
+   so the whole UI agrees on what "hovered" looks like. */
+.btn--secondary:hover {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+/* Login's size, and only login's. 1rem is load-bearing rather than
+   decorative: it holds the label at the base size, which is what stops
+   iOS zooming the page when the button next to a field is tapped. */
+.btn--lg {
+  font-size: 1rem;
+  padding: 12px 16px;
+}
+
+/* --- Callout ---------------------------------------------------------
+
+   Extracted from .auth-error and .sa-error, which were identical apart
+   from login's glyph.
+
+   A bordered box, not a run of coloured text: the shape and the sentence
+   both carry the failure before the colour does.
+
+   overflow-wrap is not cosmetic. The message is whatever the server (or
+   the browser) hands back, so it can contain an unbroken token -- a URL,
+   a long address -- longer than the box. `anywhere` rather than
+   `break-word` because only the former also shrinks the text's
+   min-content width: the message is an anonymous flex item, and without
+   this it refuses to shrink and pushes a horizontal scrollbar onto the
+   whole page. Measured at 360px: an unbroken 90-character message took
+   the document to 457px against a 345px client width. */
+.callout {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+
+/* The only variant, because a failure is the only thing anything in this
+   project currently calls out. A --success or --info would be invented
+   rather than extracted. */
+.callout--error {
+  color: var(--danger);
+  background: var(--danger-weak);
+  border-color: var(--danger);
+}
+
+/* Optional, and shape only -- the colours are the variant's, below, or a
+   non-error callout would inherit a red dot. 50% stays literal: it is the
+   glyph's own geometry, not a corner on the radius scale. */
+.callout-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+.callout--error .callout-mark {
+  color: var(--danger-weak);
+  background: var(--danger);
+}
+
+/* --- Pill ------------------------------------------------------------
+
+   Extracted from .threshold-standing, which is the one primitive here
+   with a single implementation rather than two. It is included because
+   the extraction is otherwise identical to the card and button cases,
+   and because faculty attendance history needs exactly this. If a second
+   use does not materialise there, this belongs back on the page that
+   owns it.
+
+   Colour never carries the meaning on its own: every pill in use states
+   its condition in words, and the fill only agrees with what the
+   sentence already says. */
+.pill {
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pill--success {
+  color: var(--success);
+  background: var(--success-weak);
+  border-color: var(--success);
+}
+
+.pill--warning {
+  color: var(--warning);
+  background: var(--warning-weak);
+  border-color: var(--warning);
+}
+
+/* --- Field -----------------------------------------------------------
+
+   Extracted from .auth-field and .sa-field: a label stacked over its
+   control, with the control chrome that both had written out.
+
+   `select` is styled alongside `input` though neither designed page has
+   one. It is the same chrome, and every faculty and admin form is built
+   from both -- this is the one place the file runs a step ahead of its
+   users rather than behind them.
+
+   NAMED .form-field, not .field, because `.field` is taken: twenty-two
+   spans across ten un-redesigned admin and faculty files already render
+   it, styled by `.hierarchy-form .field` in scaffolding.css. Those beat a
+   bare `.field` rule on specificity, so the layout would have survived --
+   but `.field label` and `.field input:hover` have no counterpart there
+   and would have silently restyled every form on eleven pages nobody has
+   designed yet. The other four primitives here collide with nothing and
+   keep their plain names. */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field label {
+  color: var(--text-h);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* font: inherit drops the browser's own small form font. --bg keeps the
+   control distinct from the --surface card it usually sits on. 0.9rem is
+   the floor here for a reason: it computes to 16.2px against the 18px
+   root, and iOS zooms the page on focus at anything under 16. */
+.form-field input,
+.form-field select {
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.form-field input:hover,
+.form-field select:hover {
+  border-color: var(--text-muted);
+}
+
+/* ORDER-DEPENDENT: (0,1,1), the same as the rule above, so this must
+   follow it. Login's fields are the only large ones. */
+.form-field--lg input,
+.form-field--lg select {
+  font-size: 1rem;
+  padding: 10px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}

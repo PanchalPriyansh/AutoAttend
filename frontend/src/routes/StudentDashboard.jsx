@@ -7,7 +7,7 @@ function StudentDashboard() {
     <AppShell title="Student Dashboard">
       <ul className="student-home">
         {navigationFor('student').map((item) => (
-          <li className="student-home-card" key={item.to}>
+          <li className="student-home-card card" key={item.to}>
             <Link className="student-home-link" to={item.to}>
               {item.label}
             </Link>

@@ -1,8 +1,13 @@
-/* Design tokens -- the whole palette, in both themes.
+/* Design tokens -- the whole palette in both themes, and the radii.
 
    Every colour below is declared here and referenced by name elsewhere --
    a raw hex in a component rule is a bug, because it cannot follow the
    dark palette and nothing will notice until somebody switches theme.
+
+   The radii at the end are the other kind of token: constants shared by
+   the primitives in components.css rather than colours. They sit outside
+   both theme blocks because a corner does not change with the palette.
+   There is deliberately no spacing scale -- see components.css.
 
    Body text is #5a5364 rather than something lighter so it clears 6:1 on
    white: the previous value sat close enough to the 4.5:1 floor that it
@@ -33,6 +38,14 @@
   --danger-weak: #fdecea;
   --focus: #4c3fb5;
   --shadow: 0 1px 2px rgb(8 6 13 / 0.04), 0 4px 12px rgb(8 6 13 / 0.06);
+
+  /* Component chrome only -- buttons, inputs, callouts, cards, pills. The
+     small radii on the data visuals (the gauge track, the lecture marks,
+     the callout glyph's circle) are tuned to their own geometry, are not
+     on this scale, and stay as literal values where they are used. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-pill: 999px;
 
   font: 18px/145% system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;

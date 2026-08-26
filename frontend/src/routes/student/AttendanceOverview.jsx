@@ -112,11 +112,11 @@ function AttendanceOverview() {
   return (
     <AppShell title="My Attendance">
       <div className="student-attendance">
-        {error ? <p className="sa-error">{error}</p> : null}
+        {error ? <p className="callout callout--error">{error}</p> : null}
 
         {overview && !error ? (
           <>
-            <section className="sa-section sa-card sa-overall">
+            <section className="sa-section card sa-overall">
               <h2 className="sa-eyebrow">Overall</h2>
               <AttendanceBar
                 size="large"
@@ -143,7 +143,9 @@ function AttendanceOverview() {
                     <li
                       key={item.id}
                       className={
-                        item.id === openClassId ? 'sa-class is-open' : 'sa-class'
+                        item.id === openClassId
+                          ? 'sa-class card is-open'
+                          : 'sa-class card'
                       }
                     >
                       <span className="sa-class-main">
@@ -166,7 +168,7 @@ function AttendanceOverview() {
 
                       <button
                         type="button"
-                        className="sa-toggle"
+                        className="btn btn--secondary sa-toggle"
                         onClick={() => openClass(item.id)}
                         aria-expanded={item.id === openClassId}
                         /* Only while the panel exists: pointing at an id
@@ -187,7 +189,7 @@ function AttendanceOverview() {
         ) : null}
 
         {openClassId ? (
-          <section className="sa-section sa-card sa-detail" id="sa-lecture-panel">
+          <section className="sa-section card sa-detail" id="sa-lecture-panel">
             <div className="sa-section-head">
               <h2 className="sa-panel-title">
                 {detail ? describeClass(detail.class) : 'Lectures'}
@@ -195,7 +197,7 @@ function AttendanceOverview() {
             </div>
 
             <div className="sa-filter">
-              <div className="sa-field">
+              <div className="form-field sa-field">
                 <label htmlFor="attendance-from">From</label>
                 <input
                   id="attendance-from"
@@ -204,7 +206,7 @@ function AttendanceOverview() {
                   onChange={(event) => setFrom(event.target.value)}
                 />
               </div>
-              <div className="sa-field">
+              <div className="form-field sa-field">
                 <label htmlFor="attendance-to">To</label>
                 <input
                   id="attendance-to"
@@ -220,7 +222,7 @@ function AttendanceOverview() {
                 first message is announced late or not at all. It collapses
                 via .sa-status:empty so it costs no gap while idle. */}
             <div className="sa-status" aria-live="polite">
-              {detailError ? <p className="sa-error">{detailError}</p> : null}
+              {detailError ? <p className="callout callout--error">{detailError}</p> : null}
               {detailLoading ? (
                 <p className="sa-loading">Loading lectures…</p>
               ) : null}

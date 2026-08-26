@@ -31,11 +31,11 @@ function Login() {
 
   return (
     <div className="auth-screen">
-      <main className="auth-card">
+      <main className="auth-card card">
         <p className="auth-brand">AutoAttend</p>
         <h1 className="auth-title">Login</h1>
         <form className="auth-form" onSubmit={handleSubmit}>
-          <div className="auth-field">
+          <div className="form-field form-field--lg">
             <label htmlFor="email">Email</label>
             <input
               id="email"
@@ -48,7 +48,7 @@ function Login() {
               required
             />
           </div>
-          <div className="auth-field">
+          <div className="form-field form-field--lg">
             <label htmlFor="password">Password</label>
             <input
               id="password"
@@ -61,14 +61,18 @@ function Login() {
             />
           </div>
           {error && (
-            <p className="auth-error" role="alert">
-              <span className="auth-error-mark" aria-hidden="true">
+            <p className="callout callout--error" role="alert">
+              <span className="callout-mark" aria-hidden="true">
                 !
               </span>
               {error}
             </p>
           )}
-          <button type="submit" className="auth-submit" disabled={submitting}>
+          <button
+            type="submit"
+            className="btn btn--primary btn--lg auth-submit"
+            disabled={submitting}
+          >
             {submitting ? 'Logging in…' : 'Log in'}
           </button>
         </form>

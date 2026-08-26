@@ -18,8 +18,9 @@ Load the `frontend-design` skill before you start. It carries this project's UI 
 ```text
 frontend/src/index.css        the @import manifest -- order IS the cascade
 frontend/src/styles/
-  tokens.css                  the palette, light and dark
-  base.css                    element defaults + .visually-hidden
+  tokens.css                  the palette, light and dark, + radii
+  base.css                    element defaults, .visually-hidden, focus
+  components.css              .card .btn .callout .pill .form-field
   login.css                   .auth-*
   shell.css                   .app-*, .page*, .portal-*
   scaffolding.css             every page not yet redesigned
@@ -31,7 +32,7 @@ When you add a file to the manifest, put it before `scaffolding.css`, so a lefto
 
 So:
 
-- **Prefer page-scoped selectors.** A rule for the student dashboard belongs under a class only that page uses, not on a bare element or a generic `.card`. Being in a separate file is organisation, not isolation — there are no CSS modules here.
+- **Prefer page-scoped selectors.** A rule for the student dashboard belongs under a class only that page uses, not on a bare element. Being in a separate file is organisation, not isolation — there are no CSS modules here. The one exception is the shared vocabulary below, which you *compose* rather than write.
 - **Before changing an existing shared rule, grep for every use of it.** If more than the page you were asked about uses it, either scope your change, or change it deliberately and **name every affected page in your report**. This matters most in `scaffolding.css`, whose class names do not partition by page: `.hierarchy-*` alone is used by twelve files across admin, faculty and student.
 - Never silently restyle a page you were not asked to touch. A change that improves the faculty screen and quietly degrades the admin screen is a failure, however good the faculty screen looks.
 - Only `base.css` and `tokens.css` are meant to be read by everyone. Do not add to either to solve a single page's problem.
@@ -51,7 +52,26 @@ So:
 - The shell's own styling (`.app-header`, `.app-nav`, `.skip-link`, `.page`, `.page-title`, `.portal-links`) lives in `styles/shell.css`, is marked **temporary** there, and is meant to be replaced. You may restyle it — but it is shared by all nine signed-in pages, so treat it as a shared-rule change: say so in your report and name the pages it affects.
 - `Login.jsx` and `NotFound.jsx` are reachable while signed out and render **no** shell. They are the exception; style them as standalone pages.
 
-There is deliberately **no component vocabulary yet** — no `.btn`, `.card`, `.input`, `.table`, `.alert`, and no spacing or radius scale. That was left out on purpose, to be extracted later from pages that have actually been designed rather than guessed at up front. Until then, write page-scoped rules as this file already tells you to. If you find yourself wanting a shared `.btn`, that is evidence for the extraction, not permission to start it: note it in your report.
+## There is a component vocabulary. Compose it, do not restyle it.
+
+`styles/components.css` holds five primitives, each extracted from two or more pages that had already been designed and had each built the same thing:
+
+| Primitive | Use |
+|---|---|
+| `.card` | `--surface` panel, hairline border, 12px corner, 20px padding |
+| `.btn` + `.btn--primary` / `.btn--secondary` / `.btn--lg` | every button; the base is chrome and size, a variant is the fill |
+| `.callout` + `.callout--error` (+ optional `.callout-mark`) | a bordered message, not a run of coloured text |
+| `.pill` + `.pill--success` / `.pill--warning` | a small bordered status label |
+| `.form-field` (+ `.form-field--lg`) | a label stacked over an `input` or `select` |
+
+It is `.form-field` and not `.field` because `.field` is already taken by twenty-two spans across ten un-redesigned admin and faculty files, styled by `.hierarchy-form .field` in `scaffolding.css`. When you migrate one of those pages onto the vocabulary, rename its `field` to `form-field` as part of the redesign — that is how the scaffolding rule finally dies.
+
+How to use them:
+
+- **Compose, then add your own hook for what is page-specific**: `className="btn btn--secondary sa-toggle"`. The primitive carries the fill, the chrome and the hover; your class carries layout, positioning, page-only states and anything data-driven.
+- **Never restyle a primitive to suit your page.** `.card { padding: 16px }` in a page file silently redesigns login and both student pages. Override on your own selector — `.sa-class { padding: 16px }` — which works because every page file is imported after `components.css`.
+- **Do not add a sixth primitive, or a new variant, on your own.** They are extracted from two real implementations, never invented for one. If your page wants a `.table`, a `.modal`, or a `.callout--success`, write it page-scoped and **say so in your report** — that is the evidence for the next extraction, not permission to start it.
+- Radii come from `--radius-sm` / `--radius-md` / `--radius-pill` for component chrome. There is deliberately **no spacing scale**; the rhythm is 2/4/8/12/16/20/32 and you write the values.
 
 ## Design tokens are the palette. All of it.
 

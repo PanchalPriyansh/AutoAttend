@@ -41,11 +41,7 @@ function ThresholdNote({ threshold, meetsThreshold, lecturesToReach }) {
 
   return (
     <span className="threshold-note">
-      <span
-        className={`threshold-standing threshold-standing--${
-          meetsThreshold ? 'met' : 'below'
-        }`}
-      >
+      <span className={`pill pill--${meetsThreshold ? 'success' : 'warning'}`}>
         {standing}
       </span>
       {catchUp ? <span className="threshold-catch-up">{catchUp}</span> : null}

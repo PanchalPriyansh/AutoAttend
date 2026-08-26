@@ -23,16 +23,12 @@
   list-style: none;
 }
 
-/* --surface reads as raised in both palettes -- darker than --bg in
-   light, lighter than it in dark -- which is the same relationship the
-   login card uses. */
+/* .card carries the fill, the border and the corner. What is left is
+   this page's: the right gutter the chevron needs, and the fact that the
+   whole card is a target and so reacts to hover and press. */
 .student-home-card {
   position: relative;
-  box-sizing: border-box;
   padding: 20px 56px 20px 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
