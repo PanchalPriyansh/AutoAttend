@@ -35,7 +35,7 @@ function AppShell({ title, children }) {
 
         <div className="app-user">
           {user?.name ? <span>{user.name}</span> : null}
-          <button type="button" className="app-logout" onClick={logout}>
+          <button type="button" className="btn btn--secondary" onClick={logout}>
             Log out
           </button>
         </div>

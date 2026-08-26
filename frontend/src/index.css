@@ -9,6 +9,9 @@
 
      tokens        every other file reads these custom properties
      base          element defaults the pages then override
+     components    the shared primitives, before every page that uses
+                   them -- so a page can override one with a plain later
+                   rule instead of a more specific selector
      login         signed out, renders no shell
      shell         the frame the nine signed-in pages sit in
      <page>        one file per redesigned page, after the frame it
@@ -23,6 +26,7 @@
 
 @import './styles/tokens.css';
 @import './styles/base.css';
+@import './styles/components.css';
 @import './styles/login.css';
 @import './styles/shell.css';
 @import './styles/student-dashboard.css';

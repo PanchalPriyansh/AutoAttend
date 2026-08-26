@@ -14,6 +14,14 @@
    .lecture-*) were already exclusive to this page and were moved here
    from scaffolding.css unchanged in name.
 
+   The card, the button, the callout, the field and the pill this page
+   had built for itself are now primitives in components.css, and the
+   markup composes them (`sa-class card`, `btn btn--secondary sa-toggle`).
+   That is the opposite of the .hierarchy-* situation above and the
+   difference is intent: those classes were never shared on purpose,
+   these are. What stays here is layout, data, and this page's own
+   states.
+
    Two things about this page are load-bearing and are preserved rather
    than merely inherited:
 
@@ -53,27 +61,8 @@
   max-width: 720px;
 }
 
-/* One ring for every control on the page -- the two date inputs and one
-   button per class -- rather than three near-identical rules. Same 2px
-   at 2px offset the login screen and the student dashboard use. */
-.student-attendance :focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
 .sa-section {
   margin: 0;
-}
-
-/* Raised the same way the login card and the dashboard cards are:
-   --surface reads as above --bg in light and in dark. No shadow -- on
-   this page the hierarchy is carried by type size, and three stacked
-   drop shadows would only add noise to a screen that is mostly data. */
-.sa-card {
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
 }
 
 /* --- Headings ------------------------------------------------------
@@ -154,21 +143,6 @@
   border-radius: 12px;
 }
 
-/* A bordered callout, not a run of red text -- the same shape login.css
-   uses, so a failure looks the same in both places. The message comes
-   from the server and can contain an unbroken token longer than the
-   box. */
-.sa-error {
-  margin: 0;
-  padding: 10px 12px;
-  color: var(--danger);
-  font-size: 0.85rem;
-  background: var(--danger-weak);
-  border: 1px solid var(--danger);
-  border-radius: 8px;
-  overflow-wrap: anywhere;
-}
-
 /* The panel's polite live region. Always in the DOM so an announcement
    is never missed, and collapsed while empty so it does not spend one of
    .sa-detail's 12px gaps on nothing. */
@@ -194,10 +168,9 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px 16px;
   align-items: start;
+  /* Tighter than the shared card's 20: these are rows in a list rather
+     than panels, and they are read by scanning down them. */
   padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
 }
 
 /* The open class is marked on the card as well as by the button's
@@ -237,35 +210,10 @@
   margin-top: 10px;
 }
 
+/* `btn btn--secondary` carries the chrome, the fill and the hover. The
+   label is two words and must not break across lines beside the gauge. */
 .sa-toggle {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 8px 14px;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
   white-space: nowrap;
-  /* Drops the ~300ms tap delay mobile browsers add while they wait for
-     a possible double-tap zoom. */
-  touch-action: manipulation;
-  /* Set deliberately rather than left to the UA, whose default grey box
-     ignores the 8px radius and flashes a rectangle over a rounded
-     button. :active below is the feedback instead, and it matches what
-     hover does. */
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
-}
-
-/* Hover raises contrast rather than dropping it -- the same accent
-   border plus accent tint the shell's logout button and the student
-   dashboard card use. */
-.sa-toggle:hover {
-  background: var(--accent-weak);
-  border-color: var(--accent);
 }
 
 .sa-toggle:active {
@@ -309,36 +257,12 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* .form-field carries the label and the control chrome. The two date fields
+   share the strip's width rather than filling it, and shrink before they
+   wrap. */
 .sa-field {
-  display: flex;
   flex: 0 1 180px;
-  flex-direction: column;
-  gap: 6px;
   min-width: 0;
-}
-
-.sa-field label {
-  color: var(--text-h);
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-/* font: inherit drops the browser's own small form font. --bg keeps the
-   input distinct from the --surface card it sits on, the same
-   relationship the login card's inputs have. */
-.sa-field input {
-  font: inherit;
-  font-size: 0.9rem;
-  min-width: 0;
-  padding: 8px 10px;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.sa-field input:hover {
-  border-color: var(--text-muted);
 }
 
 /* --- Lecture list --------------------------------------------------
@@ -480,30 +404,12 @@
   font-size: 0.8rem;
 }
 
-/* A bordered pill, so met and below are one glance apart down a list of
-   classes. Met and below are distinguished by their words first -- the
-   colour and the fill only agree with what the sentence already says,
-   and the sentence is what a screen reader and a colourblind reader
-   both get. */
-.threshold-standing {
-  padding: 2px 8px;
-  border: 1px solid;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.threshold-standing--met {
-  color: var(--success);
-  background: var(--success-weak);
-  border-color: var(--success);
-}
-
-.threshold-standing--below {
-  color: var(--warning);
-  background: var(--warning-weak);
-  border-color: var(--warning);
-}
+/* The standing itself is `pill pill--success` / `pill pill--warning` from
+   components.css -- a bordered pill, so met and below are one glance
+   apart down a list of classes. Met and below are distinguished by their
+   words first: the colour only agrees with what the sentence already
+   says, and the sentence is what a screen reader and a colourblind
+   reader both get. */
 
 .threshold-catch-up {
   color: var(--text-muted);
@@ -738,8 +644,12 @@
   /* Reached only when the overview request failed while a class happened
      to be open. It takes both columns rather than being indented beside
      the panel, but keeps the 720px measure -- a server message set
-     1100px wide is harder to read, not more visible. */
-  .student-attendance:has(.sa-detail) .sa-error {
+     1100px wide is harder to read, not more visible.
+
+     A child combinator, because .callout is now a shared class and the
+     panel has one of its own inside .sa-status: only the page-level
+     error is a grid item here. */
+  .student-attendance:has(.sa-detail) > .callout {
     grid-column: 1 / -1;
     max-width: 720px;
   }
@@ -772,8 +682,3 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .sa-toggle {
-    transition: none;
-  }
-}

@@ -20,6 +20,22 @@ h1 {
   font-weight: 500;
 }
 
+/* Focus is never removed, anywhere -- so the ring is declared once, here,
+   rather than by each page for its own controls. It used to be written
+   out three times (login, the shell's header, student attendance) with
+   identical values, and the fourth page group would have written a
+   fourth.
+
+   Two existing rules deliberately override this and still do, both by
+   specificity as well as by load order: .student-home-link, which moves
+   its ring to the stretched ::after so it outlines the whole card, and
+   .page, which is focused programmatically by the skip link and should
+   not show a ring for it. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 /* Hides an element from sight while leaving it to screen readers. Used
    by the shell's skip link and by the student lecture strip, which is
    why it lives here rather than with either of them. */

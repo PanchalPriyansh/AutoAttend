@@ -107,8 +107,9 @@ Follow the actual project structure once these responsibilities are organized in
 ```text id="c5s9ty"
 frontend/src/index.css        the @import manifest -- order IS the cascade
 frontend/src/styles/
-  tokens.css                  the palette, light and dark
-  base.css                    element defaults + .visually-hidden
+  tokens.css                  the palette, light and dark, + the radii
+  base.css                    element defaults, .visually-hidden, focus
+  components.css              .card .btn .callout .pill .form-field
   login.css                   .auth-*
   shell.css                   .app-*, .page*, .portal-*  (temporary)
   student-dashboard.css       .student-home-*
@@ -118,6 +119,7 @@ frontend/src/styles/
 
 - **`scaffolding.css` is temporary and should only ever shrink.** It holds the styling written while the features were being built. Its class names do not partition by page — `.hierarchy-*` alone still reaches eleven files across admin and faculty — which is why it is one file rather than several. It was 396 lines when the redesign began and is 223 now. Each `/frontend-maker` group carves its pages out of it into `styles/<page>.css`. When it is empty, the redesign is finished.
 - **A new page file goes into the manifest before `scaffolding.css`**, so a leftover scaffolding rule cannot win over a finished design.
+- **`components.css` is the shared vocabulary — compose it, never restyle it.** Five primitives (`.card`, `.btn` + variants, `.callout`, `.pill`, `.form-field`), each extracted from two or more *designed* pages that had each built the same thing. It is `.form-field` and not `.field` because `.field` is still owned by `scaffolding.css` and rendered by ten un-redesigned files — a bare `.field` would have restyled every form on those pages. A page composes them and keeps its own hook alongside for what is page-specific (`className="btn btn--secondary sa-toggle"`); anything layout, data-driven or page-only stays on that hook. `.card { padding: 16px }` in a page file is the failure mode — it silently redesigns every other page — so override on the page's own selector instead, which the manifest order already makes work. A sixth primitive or a new variant is added only when two real implementations exist, never invented for one page. This is the opposite of the `scaffolding.css` rule below, and the difference is intent: those classes were never shared on purpose, these are.
 - **A redesigned page stops *borrowing* the shared classes rather than restyling them.** `.hierarchy-*`, `.user-*` and `.field` are not a vocabulary — they are whatever each page happened to reach for. Restyling one to suit the page in hand silently redesigns admin and faculty screens nobody has looked at. Rename the page's usages onto its own hooks instead (`.student-home-*`, `.sa-*`), leave the shared rules untouched, and let them die when the last borrower is redesigned.
 - **Only `tokens.css` and `base.css` are read by everyone.** Do not add to either to solve one page's problem.
 - **Never write a raw colour outside `tokens.css`** — it cannot follow the dark palette, and nothing catches it until someone switches theme.
@@ -297,7 +299,7 @@ Specs `01`–`12` are built. Every core capability this file describes exists, a
 
 One group at a time, each finished before the next starts. `/frontend-maker` takes one page per invocation, so a group is run page by page.
 
-**The component-vocabulary extraction is now due, and is the better thing to do before group 3.** Two groups have been designed and the duplication is no longer hypothetical — the *card* (`--surface` + `1px --border` + `12px` radius + `--shadow`), the *secondary button* (`.app-logout` ≡ `.sa-toggle`, identical padding, radius and accent-border hover), and the *error callout* (`.auth-error` ≡ `.sa-error`) each exist in near-identical form in two or three finished files, with a *status pill* and a *field* close behind. Spacing has converged on 2/4/8/12/16/20/32 and radii on 8/12/999 without being written down anywhere. Extracting now means faculty is built on the vocabulary instead of adding a third copy to it. That extraction is its own spec and was deliberately **not** done up front — designing a vocabulary before any page has been designed is guessing.
+**The component-vocabulary extraction is done** (`13-component-vocabulary`), between groups 2 and 3 as planned, so faculty is built on the vocabulary instead of adding a third copy to it. `styles/components.css` holds the five primitives, each extracted from two or more designed pages rather than guessed at up front — see the "Stylesheets" section above for the rule that governs it. Group 3 is next and should **compose** those primitives; a page that finds itself wanting a sixth writes it page-scoped and reports it as evidence for the next extraction.
 
 Beyond that, what remains is only the deferred items already recorded per feature above, none of them scheduled:
 
