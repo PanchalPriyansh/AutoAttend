@@ -134,6 +134,28 @@
 /* Login's size, and only login's. 1rem is load-bearing rather than
    decorative: it holds the label at the base size, which is what stops
    iOS zooming the page when the button next to a field is tapped. */
+/* Destructive. Hollow rather than filled: a delete button should be
+   findable without competing with the primary action beside it, and a
+   solid --danger bar reads as the loudest thing on a screen whose
+   loudest thing should be the work, not the way out of it. The fill
+   arrives on hover, once the pointer is already committed.
+
+   Extracted from two independent implementations that had converged on
+   identical declarations: the capture screen's "Replace the existing
+   record" and the history screen's "Delete this record". No .card
+   companion rule (as .btn--secondary has), because neither destructive
+   button sits inside a card -- add one when that stops being true. */
+.btn--danger {
+  color: var(--danger);
+  background: var(--bg);
+  border-color: var(--danger);
+  font-weight: 500;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-weak);
+}
+
 .btn--lg {
   font-size: 1rem;
   padding: 12px 16px;
@@ -193,6 +215,28 @@
 .callout--error .callout-mark {
   color: var(--danger-weak);
   background: var(--danger);
+}
+
+/* The counterpart to --error: an outcome that went right and is worth
+   confirming rather than a failure. The mark inverts the same way.
+
+   Extracted from two independent implementations with identical
+   declarations -- the capture screen's "Attendance saved: N present, M
+   absent." and the history screen's "Correction saved" / "Attendance
+   for that lecture was deleted."
+
+   There is deliberately no --warning variant yet: only the capture
+   screen has one (its already-recorded notice), and one implementation
+   is a page-scoped rule, not a primitive. */
+.callout--success {
+  color: var(--success);
+  background: var(--success-weak);
+  border-color: var(--success);
+}
+
+.callout--success .callout-mark {
+  color: var(--success-weak);
+  background: var(--success);
 }
 
 /* --- Pill ------------------------------------------------------------

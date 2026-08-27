@@ -226,17 +226,6 @@
   background: var(--warning);
 }
 
-.fa-alert--saved {
-  color: var(--success);
-  background: var(--success-weak);
-  border-color: var(--success);
-}
-
-.fa-alert--saved .callout-mark {
-  color: var(--success-weak);
-  background: var(--success);
-}
-
 /* --- Capture --------------------------------------------------------- */
 
 .fa-capture .fa-alert {
@@ -430,130 +419,6 @@
   border-bottom-style: dashed;
 }
 
-.fa-row-identity {
-  display: flex;
-  flex: 1 1 200px;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-/* The name dominates: a whole step larger than the line under it,
-   heavier, and in --text-h while the metadata drops to --text-muted.
-   Before this the name and the email were the same size and one shade
-   apart. overflow-wrap because a name is unbounded input. */
-.fa-row-name {
-  color: var(--text-h);
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-/* (0,2,0), so it wins wherever the row renders -- including inside
-   scaffolding's .hierarchy-items on the history screen, which no longer
-   matches its own .is-inactive rule. */
-.fa-row--inactive .fa-row-name {
-  color: var(--text);
-  text-decoration: line-through;
-}
-
-.fa-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  align-items: center;
-}
-
-.fa-row-email {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  overflow-wrap: anywhere;
-}
-
-/* What recognition has to say about this row. Its own element rather
-   than a " · "-joined tail on the email, which is what let the most
-   important sentence on the page -- "Weak match (0.58) — check this
-   one" -- render at the same size and colour as an address. Tabular
-   figures keep the distances in a column down the list. */
-.fa-row-detail {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- Flags ------------------------------------------------------------
-
-   A .pill, composed. The weak match takes --warning, which is the one
-   bordered mark in the recognised list and so the one row that catches
-   the eye while scrolling past forty confident matches. The pill states
-   its own condition in words, so the fill only agrees with the sentence
-   already there. */
-
-.fa-flag {
-  /* The weak-match label is a sentence, not a word, and must be allowed
-     to wrap rather than push the toggle off the row. */
-  white-space: normal;
-  line-height: 1.35;
-}
-
-/* Neutral, for the two flags that are facts rather than warnings: a
-   deactivated account, and a student recognition could not look for.
-   Page-scoped -- a third .pill variant belongs in components.css only
-   once two designed pages want it. */
-.fa-flag--muted {
-  color: var(--text-h);
-  background: var(--bg);
-  border-color: var(--border);
-}
-
-/* --- The present/absent toggle ---------------------------------------
-
-   The single most important control on the screen: a row's status is
-   whatever this button says, across a roster of dozens, and it used to
-   be the same grey box in both states with only the word inside it
-   changing.
-
-   Present is solid, absent is hollow -- the same encoding the student
-   attendance screen uses for a lecture mark, and the reason the state
-   survives without colour. The label spells out the state and the act
-   ("Present — mark absent"), which is what the fill agrees with.
-
-   .fa-toggle--* is written at (0,2,0) deliberately: it is the one thing
-   in this file that should also win inside scaffolding's
-   `.hierarchy-level button` on the history screen, where flipping a
-   wrongly-marked student is that screen's entire job. Chrome there stays
-   scaffolding's until history is redesigned. */
-
-.fa-toggle {
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-/* --bg on --success is 7.4:1 in light and higher in dark -- the same
-   pair .pill--success is built from, inverted. */
-.fa-toggle.fa-toggle--present {
-  color: var(--bg);
-  background: var(--success);
-  border-color: var(--success);
-}
-
-.fa-toggle.fa-toggle--absent {
-  color: var(--text-h);
-  background: var(--bg);
-  border-color: var(--border);
-}
-
-.fa-toggle:hover:not(:disabled) {
-  border-color: var(--text-h);
-}
-
-/* Every toggle on the page disables together while a capture is being
-   analysed or a save is in flight; .btn already dims them. */
-.fa-toggle:disabled {
-  cursor: default;
-}
-
 /* --- Save ------------------------------------------------------------- */
 
 .fa-actions {
@@ -577,17 +442,6 @@
 /* Overwriting a recorded lecture is destructive, so the button says so
    in its own colour as well as its label -- and stays hollow, because
    it is the secondary of the two actions here. */
-.fa-danger {
-  color: var(--danger);
-  background: var(--bg);
-  border-color: var(--danger);
-  font-weight: 500;
-}
-
-.fa-danger:hover:not(:disabled) {
-  background: var(--danger-weak);
-}
-
 /* --- The capture panel in a narrow card, to 520px --------------------
 
    "Upload a photo", "Upload a short video" and "Use camera" share one

@@ -1,0 +1,670 @@
+/* --- Attendance history (/faculty/attendance/history) ---------------
+
+   The other half of the faculty attendance job: not "who is here now"
+   but "what does the record say, and is it right". A faculty member
+   arrives here to look something up, or because somebody was marked
+   wrongly and wants it fixed.
+
+   Three parts, in the order they are used: pick a class and a date
+   range, scan the lectures recorded for it, open one and correct it.
+   They stay stacked -- see the note above .fh-detail.
+
+   Two things on this page carry more weight than anything else and were
+   both rendering as body text:
+
+     `edited` / `corrected since it was recorded` is the whole audit
+     trail. Nothing anywhere records who changed what or when beyond
+     this one boolean, and it was the tail of a " · "-joined metadata
+     string -- the same size and colour as the present/absent counts in
+     front of it. It is now a bordered .pill in --warning, the same hue
+     the capture screen uses for "attendance for this date was already
+     recorded", which is the same kind of fact: something happened here
+     already, look before you trust it. It states its condition in
+     words, so the fill only agrees with a sentence that is already
+     there.
+
+     `Delete this record` is permanent. It removes the session and every
+     student record for that lecture and there is no undo. It was
+     scaffolding's grey button with `color: var(--danger)` on it -- one
+     red word, identical in size, chrome and position to Save beside it.
+     It is now hollow --danger with a --danger border, and it is pushed
+     to the far end of the action row so it is not adjacent to the
+     button people actually came to press.
+
+   Ownership: every class this page rendered came from scaffolding.css
+   -- .hierarchy-level, .hierarchy-header, .hierarchy-hint,
+   .hierarchy-error, .hierarchy-form, .hierarchy-items, .field, plus
+   .user-identity/.user-name (borrowed for *session* rows, where the
+   date plays the part of a name) and .danger. All of them are still
+   rendered by the four admin screens. The markup was renamed onto .fh-*
+   rather than those rules being restyled underneath admin, exactly as
+   /faculty/attendance and /student/attendance were. No rule in
+   scaffolding.css was changed or removed, so it does not shrink here;
+   it shrinks when the admin group lands. ConfirmDialog still renders
+   .dialog and .danger from there and is deliberately untouched -- it is
+   shared with four admin screens.
+
+   .card, .btn, .callout, .pill and .form-field come from components.css
+   and are composed, never restyled: every override below is on one of
+   this page's own selectors.
+
+   The student rows come from StudentStatusRow, styled by
+   faculty-roster-row.css, which owns the row and not the list. This
+   file writes .fh-roster -- the box, the hairlines, the hover and the
+   stacking breakpoint -- rather than borrowing .fa-roster, which
+   belongs to the capture page's stylesheet. The values match that
+   page's on purpose: it is the same component doing the same job, and
+   the same row should not be a different shape on the two screens that
+   show it.
+
+   Vertical rhythm: 20 between sections, 12 inside a panel, 8 and below
+   within a group -- the capture screen's, so the two faculty screens
+   read as one product.
+
+   No transition is declared here. The only animated thing on the page
+   is .btn's colour fade, already guarded for prefers-reduced-motion in
+   components.css. */
+
+.fh-page {
+  display: grid;
+  /* minmax(0, 1fr) rather than the implicit `auto`, for the reason set
+     out at length in faculty-attendance.css: an auto track is floored at
+     the min-content width of its widest item, and the widest item here
+     is a card of form controls whose <select> is as wide as its longest
+     option. A 0 minimum lets the track shrink and the fields follow. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  /* The capture screen's measure, not .page's 1100, and for the same
+     reason: a roster row puts a student's name at the left edge and
+     their present/absent toggle at the right, and past about 820 the
+     two stop reading as one row. The session list has the same shape --
+     a date at one edge, its Open button at the other -- so it wants the
+     same cap. */
+  max-width: 820px;
+}
+
+.fh-intro {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* --- Headings --------------------------------------------------------
+
+   Two treatments, the same split the capture and student attendance
+   screens make. A small caps label for a structural section ("Choose a
+   class") and a plain title at a readable size for the parts that are
+   content -- the list of lectures and the lecture being corrected.
+
+   Before this, all three <h2>s were scaffolding's .hierarchy-header h2:
+   1rem, uppercase, letterspaced, identical. The open lecture's heading
+   -- a date and a live present/absent count, the most important line on
+   the screen whenever it exists -- was the same micro-caps label as the
+   filter above it. */
+
+.fh-panel {
+  /* .card carries the fill, the hairline and the corner. */
+  margin: 0;
+}
+
+.fh-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+.fh-eyebrow {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fh-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* The parenthetical inside a heading -- the totals, and the open
+   lecture's running counts. Set back to body weight and colour so the
+   heading reads as "**2026-03-14** (38 present, 4 absent)" rather than
+   as one long bold string. Tabular figures because the two numbers
+   change on every toggle and must not shift the words after them. */
+.fh-count {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The filter ------------------------------------------------------
+
+   Three fields, one more than the capture screen: a class, and a date
+   range around it. */
+
+.fh-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 0;
+}
+
+/* .form-field carries the label and the control chrome. The class
+   select gets twice the growth of a date input because it holds the
+   longest string on the page ("Data Structures — CS-3A"), while a date
+   input's content is ten characters wide and looks like a mistake set
+   across 340px. */
+.fh-field {
+  flex: 2 1 240px;
+  min-width: 0;
+  max-width: 380px;
+}
+
+.fh-field--date {
+  flex: 1 1 150px;
+  max-width: 200px;
+}
+
+/* Windows draws a native <select>'s popup from the control's own
+   colours, and an unset background there comes out white-on-white in
+   dark mode. .form-field already sets them on the select; this states
+   them on the options, which is the part the OS draws. */
+.fh-field select option {
+  color: var(--text-h);
+  background: var(--bg);
+}
+
+/* The selected class's place in the hierarchy -- context, not content,
+   so it recedes below the controls it describes. */
+.fh-context {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* --- Empty and busy states ------------------------------------------
+
+   "No attendance has been recorded for this class yet" as an unstyled
+   grey sentence reads as a half-drawn screen. The dashed box says the
+   list is empty on purpose, which is the difference between an answer
+   and a bug. Same treatment as the capture screen's .fa-empty. */
+.fh-empty {
+  margin: 12px 0 0;
+  padding: 16px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Solid rather than dashed: this list is not empty, it is on its way.
+   A bordered strip rather than a grey caption, because it is a state
+   and not a footnote. */
+.fh-loading {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Messages --------------------------------------------------------
+
+   The failure was .hierarchy-error (red text) and both confirmations
+   were .hierarchy-hint -- so "Attendance for that lecture was deleted",
+   which is the irreversible thing this page can do, rendered as the
+   same grey caption as the intro paragraph above it.
+
+   Both now compose components.css: .callout--error for the failure and
+   .callout--success for the confirmation. The success variant was
+   extracted once this page became its second independent implementation
+   (the capture screen's "Attendance saved" notice was the first), which
+   is what the vocabulary requires -- it was written page-scoped here
+   first, and only promoted when the pair existed. What is left below is
+   the part that is genuinely this page's. */
+
+.fh-alert {
+  line-height: 1.45;
+}
+
+/* --- The list of recorded lectures -----------------------------------
+
+   Not a card. Six stacked panels flatten the page into one texture, and
+   this list plus the editor under it are the page's content rather than
+   two more boxes on it -- so the filter above stays a card and these
+   two are led by their headings and their hairlines. Same decision the
+   capture screen makes about its rosters.
+
+   The row is deliberately the same shape as a student row: an identity
+   block (a strong first line over a muted metadata line) against a
+   control at the far edge. On this page a date plays the part of a
+   name, which is exactly why the page had borrowed .user-identity and
+   .user-name from the admin user list to build it. */
+
+.fh-sessions,
+.fh-detail {
+  margin: 0;
+}
+
+.fh-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+/* A 3px transparent left border on every row, so marking the open one
+   costs no layout shift. Padding is 5 + 3 = the 8 every other row edge
+   on the two faculty screens uses. */
+.fh-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 8px 8px 8px 5px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tracking a date across to its Open button is the physical act of
+   using this list, and the row is up to 820px wide.
+
+   :not(), rather than a plain :hover -- .fh-session--open below is
+   (0,1,0) and a bare .fh-session:hover would be (0,2,0), so hovering
+   the open row would repaint over the mark that says it is open. */
+.fh-session:not(.fh-session--open):hover {
+  background: var(--surface);
+}
+
+/* Which lecture is open below. The button in this row already says so
+   in words -- its label is "Open below" rather than "Open" -- so the
+   accent rail and tint are a second, redundant signal rather than the
+   only one, and the same accent is repeated on the panel further down
+   the page so the two read as one object. */
+.fh-session--open {
+  background: var(--accent-weak);
+  border-left-color: var(--accent);
+}
+
+.fh-session-identity {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The date dominates: a whole step larger than the line under it,
+   heavier, and in --text-h while the metadata drops to --text-muted.
+   Before this the date and its counts were the same size and one shade
+   apart, on a row whose only job is to be found by its date. Tabular
+   figures so a page of ISO dates forms a true column. */
+.fh-session-date {
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.fh-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+/* Counts and provenance. Tabular figures again -- these are read down
+   the list as much as across it. */
+.fh-session-facts {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* --- The audit mark --------------------------------------------------
+
+   .pill .pill--warning, composed. This is the page's entire audit
+   trail: there is no per-edit history anywhere, only this boolean, and
+   it was rendering as " · edited since it was recorded" appended to the
+   counts. Its own bordered element now, so it is found while scanning a
+   page of twenty-five lectures rather than read.
+
+   White-space normal because it is a sentence rather than a word and
+   must be allowed to wrap instead of pushing the button off the row --
+   the same reason .fa-flag does it. */
+.fh-flag {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.fh-open {
+  white-space: nowrap;
+}
+
+/* The open row is tinted --accent-weak, which is also .btn--secondary's
+   hover fill, so its button takes the inverse fill to stay distinct --
+   the same relationship .card .btn--secondary uses. */
+.fh-session--open .fh-open {
+  background: var(--bg);
+}
+
+/* The rule above is (0,2,0) and loads after components.css, so it also
+   beats .btn--secondary:hover -- which would have left this one button
+   with a border that changed on hover and a fill that did not. --surface
+   against the row's --accent-weak, the same distance the untinted rows
+   move. */
+.fh-session--open .fh-open:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+/* --- Paging ----------------------------------------------------------
+
+   Was scaffolding's .hierarchy-form: two buttons and a range caption
+   inside a padded, rounded --surface panel built to hold *fields*, so
+   "Showing 1–25 of 57" sat immediately after "Older →" and read as a
+   third control. It is a footer to the list now -- the controls at one
+   end, the position at the other. */
+.fh-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 12px 0 0;
+}
+
+.fh-range {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  /* The three figures change together on every page turn, and two of
+     them are the same number most of the time. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The open lecture ------------------------------------------------
+
+   Stacked below the list rather than beside it. A master-detail split
+   was considered and not taken: the Open button's own label is "Open
+   below", which is copy this pass may not change, and it would be a lie
+   on every viewport wide enough for two columns. The list and the
+   editor are tied together instead -- the open row carries an accent
+   rail and tint, and this panel repeats the same rail -- which is the
+   relationship "below" is describing.
+
+   The rail spans the whole section, not just the roster, because the
+   heading, the provenance line, the rows and the two actions are all
+   one lecture. */
+.fh-detail {
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+/* Where the record came from. Muted, because it is context -- the
+   bordered mark beside it is the part that has to be seen, and the
+   instruction below is the part to be acted on. */
+.fh-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.fh-instruction {
+  margin: 0 0 12px;
+  max-width: 68ch;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* --- The roster ------------------------------------------------------
+
+   StudentStatusRow's own typography, metadata line, flags and toggle
+   come from faculty-roster-row.css. How a page arranges a LIST of those
+   rows does not, so the box below is this page's, written out rather
+   than borrowed from .fa-roster in the capture page's file.
+
+   The values are the capture screen's on purpose. It is the same
+   component, at the same measure, doing the same job -- a faculty
+   member tracking a name across to the control that says whether that
+   person was there -- and it should not be a different shape on the two
+   screens that render it.
+
+   No rail here: over there the rail distinguishes four categories from
+   each other, and here there is one list. The section's own accent rail
+   already says which lecture these rows belong to.
+
+   Before this, the <ul> was scaffolding's .hierarchy-items and .fa-row
+   matched no box rule at all (the capture page scopes its own under
+   .fa-roster), so the rows fell back to a 6px-gapped wrapping flex
+   list: no hairlines, no hover, and a toggle that dropped onto a second
+   line as soon as the identity could not get its 200px basis. */
+.fh-roster {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.fh-roster .fa-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fh-roster .fa-row:hover {
+  background: var(--surface);
+}
+
+/* Deactivated accounts stay in the roster and are marked -- the record
+   is the record -- but they are pushed back, since a deactivated
+   student is not somebody a correction is usually about. */
+.fh-roster .fa-row--inactive {
+  border-bottom-style: dashed;
+}
+
+/* --- Save, and delete ------------------------------------------------
+
+   Both buttons were scaffolding's `.hierarchy-level button`: the same
+   grey box, the same size, side by side inside a rounded --surface
+   .hierarchy-form panel, with the destructive one told apart by a
+   single red word.
+
+   Now Save is the primary -- it is what the screen is for -- and Delete
+   is hollow --danger and pushed to the far end of the row, so the
+   permanent action is not adjacent to the one being aimed at. Both
+   still state what they do in words; the colour only agrees. */
+
+.fh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Larger than a row's toggle without reaching for .btn--lg, which is
+   login's size and says so. This is the end of the task and should not
+   look like the forty buttons above it. Matches .fa-save. */
+.fh-save {
+  padding: 10px 18px;
+  font-size: 0.9rem;
+}
+
+/* Deleting a recorded lecture removes the session and every student's
+   record for it, and is not recoverable -- so the button says so in its
+   own colour as well as its label, and stays hollow, because it is the
+   secondary of the two actions here.
+
+   It composes .btn--danger from components.css, which was extracted
+   from this button and the capture screen's "Replace the existing
+   record" -- two implementations that had independently converged on
+   the same four declarations. The colour and the hollow fill live
+   there now; what stays here is only where the button sits. */
+/* Away from Save. The gap is the point: an irreversible button should
+   not be the next thing under the cursor after the reversible one. */
+.fh-delete {
+  margin-left: auto;
+}
+
+/* --- The date range stays together, to 677px -------------------------
+
+   Three fields on one line need 240 + 16 + 150 + 16 + 150 = 572px of
+   form, and the card spends 106px of the viewport getting there (64
+   gutter, 40 padding, 2 border) -- so they fit down to 678 and no
+   further. Below that the flex line takes whichever fields it can, and
+   what it can take is the select AND `From`, at 406px, leaving `To`
+   alone on the next row.
+
+   That splits one control across two rows and gives its halves
+   different widths, because the two dates are then growing against
+   different amounts of free space. Measured, worst at the bottom of the
+   band: From 152.67 beside To 200 at 520, and From 150 beside To 200 at
+   480 -- 480 is inside the band rather than below it, because that is
+   where base.css hands back 32px of gutter and the form grows to 406,
+   just enough to fit the select and one date again.
+
+   So below 678 the class field takes the whole row, and the two dates
+   pair on the next one at equal widths -- the shape the page already
+   had at 460 and below, applied to the whole band instead of the bottom
+   of it.
+
+   The 380px cap has to go with it, and that is not cosmetic: a flex
+   line is broken on each item's HYPOTHETICAL size, which is the basis
+   already clamped by max-width. Left at 380 the select would still have
+   `From` beside it wherever 380 + 16 + 150 fits -- every width from 652
+   to 677 -- and the row would split exactly as before. Measured at 670
+   with the cap still on: select 380, From 168 beside it, To alone
+   underneath. Nothing at or above 678 is touched. */
+@media (max-width: 677px) {
+  .fh-form .fh-field:not(.fh-field--date) {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+/* --- Narrow rows, to 450px -------------------------------------------
+
+   The roster row is a two-column grid whose second track is a button
+   set nowrap, so it holds its full width at every viewport and
+   everything the screen is scanned for is squeezed out of the first.
+   Measured: the toggle is 193.89px at every width, and the identity is
+   viewport - 272.89 (32 gutter, 15 for this section's rail and its
+   padding, 16 row padding, 16 column gap) -- so it is narrower than the
+   button attached to it below 467, and 178.11px at 451.
+
+   This is the same breakpoint, and the same reasoning, as
+   faculty-attendance.css applies to .fa-roster -- which is scoped to
+   that page's <ul> and so does not reach this one. Scoped here in turn,
+   for the same reason in reverse. Re-derived rather than assumed: over
+   there the rail costs 11px instead of 15, so the strictly equivalent
+   value here is 454, not 450. The difference is four pixels of viewport
+   and three pixels of name, and it is not worth the same component
+   being a different shape on the two screens that render it, so 450
+   stands.
+
+   Stacked, the identity takes the full width and the control drops
+   beneath it at its natural width, not the row's: a column of chips
+   down the left edge reads as a status column, where full-width bars
+   read as dividers.
+
+   The SESSION row is deliberately not in here. It has the same two-
+   column shape, but its second track is `Open` at 67.2px (112.11 for
+   `Open below`) rather than a 193.89px toggle, so the first track is
+   never squeezed the way the roster's is: 228.8px at 360, which holds
+   the date and the whole `38 present - 4 absent - from photo` line at
+   207.16px. Stacking it cost 52.1px on every row -- 68.48 flat against
+   120.58 -- which over a full page of 25 lectures was 1302px of extra
+   scrolling on a phone in exchange for nothing. Flat is also the
+   shorter row at every width measured, down to 320, where it is still
+   only 94.58. */
+@media (max-width: 450px) {
+  .fh-roster .fa-row {
+    grid-template-columns: minmax(0, 1fr);
+    /* 8 rather than 4: stacked, this gap separates a block from its
+       control, not two lines of the same block. */
+    gap: 8px;
+  }
+
+  .fh-roster .fa-row .fa-toggle {
+    justify-self: start;
+  }
+
+  /* Three items on one line, and the count is the one that gives way:
+     with the shortest label this project can produce it clears `Older
+     ->` by 2.25px at 360 and drops to a second line at 340, and with a
+     realistic `Showing 1226-1250 of 1240` it drops at 400. Wrapped, its
+     `margin-left: auto` left it alone and flush right under two
+     left-aligned buttons -- a layout that changed shape with the number
+     of lectures the class happens to have.
+
+     Its own line, at the left, from here down: the controls first and
+     the position under them, which is the order the full-width pager
+     reads in as well. */
+  .fh-range {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  /* The two actions stop sharing a line, so `margin-left: auto` has
+     nothing to push against and Delete would sit directly under Save.
+     Save takes the full width -- it is what the screen is for -- and
+     Delete keeps its own, so the irreversible button is a 152.97px
+     target at the left rather than a 403px bar spanning the measure
+     directly under the one being aimed at. 8px on top of the row's 12
+     is the 20 this file puts between sections, and it is what is left
+     of "not adjacent to Save" once there is only one column. */
+  .fh-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fh-delete {
+    align-self: flex-start;
+    margin-top: 8px;
+    margin-left: 0;
+  }
+}
+
+/* --- The dates stop pairing, to 389px --------------------------------
+
+   Two dates on one line need 150 + 16 + 150 = 316px of form, which is
+   what is left at 390. Below that they each took a row of their own and
+   sat at their 200px cap with the rest of the line empty -- 86px of
+   dead space beside each of them at 360, under a select that was
+   already running the full width.
+
+   Full width instead: the row count does not change, and the three
+   controls line up. Same move, for the same reason, as the 520px rule
+   faculty-attendance.css applies to its own two fields. */
+@media (max-width: 389px) {
+  .fh-form .fh-field {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}

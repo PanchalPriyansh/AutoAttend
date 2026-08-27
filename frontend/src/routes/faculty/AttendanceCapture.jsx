@@ -247,7 +247,7 @@ function AttendanceCapture() {
           </p>
         )}
         {notice && (
-          <p className="callout fa-alert fa-alert--saved">
+          <p className="callout callout--success fa-alert">
             <span className="callout-mark" aria-hidden="true">
               ✓
             </span>
@@ -422,7 +422,7 @@ function AttendanceCapture() {
               {conflict && (
                 <button
                   type="button"
-                  className="btn fa-danger"
+                  className="btn btn--danger"
                   onClick={() => setReplacePrompt(true)}
                   disabled={pending}
                 >

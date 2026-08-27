@@ -208,184 +208,230 @@ function AttendanceHistory() {
 
   return (
     <AppShell title="Attendance History">
-      <p className="hierarchy-hint">
-        What has been recorded for your classes. Open a lecture to correct who was marked
-        present — a correction replaces what was recorded and is attributed to you.
-      </p>
-
-      <section className="hierarchy-level" aria-labelledby="filter-heading">
-        <header className="hierarchy-header">
-          <h2 id="filter-heading">Choose a class</h2>
-        </header>
-
-        <div className="hierarchy-form">
-          <span className="field">
-            <label htmlFor="history-class">Class</label>
-            <select
-              id="history-class"
-              value={classId}
-              onChange={(event) => setClassId(event.target.value)}
-            >
-              <option value="">— Select —</option>
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {describeClass(item)}
-                </option>
-              ))}
-            </select>
-          </span>
-
-          <span className="field">
-            <label htmlFor="history-from">From</label>
-            <input
-              id="history-from"
-              type="date"
-              value={from}
-              max={to || today()}
-              onChange={(event) => setFrom(event.target.value)}
-            />
-          </span>
-
-          <span className="field">
-            <label htmlFor="history-to">To</label>
-            <input
-              id="history-to"
-              type="date"
-              value={to}
-              min={from || undefined}
-              max={today()}
-              onChange={(event) => setTo(event.target.value)}
-            />
-          </span>
-        </div>
-
-        {classes.length === 0 && (
-          <p className="hierarchy-hint">
-            No classes are assigned to you yet. An admin assigns classes from the academic
-            hierarchy screen.
-          </p>
-        )}
-        {selectedClass && (
-          <p className="hierarchy-hint">
-            {selectedClass.institute} · {selectedClass.department} ·{' '}
-            {selectedClass.semester} · {selectedClass.student_count} enrolled
-          </p>
-        )}
-      </section>
-
-      {error && (
-        <p role="alert" className="hierarchy-error">
-          {error}
+      <div className="fh-page">
+        <p className="fh-intro">
+          What has been recorded for your classes. Open a lecture to correct who was marked
+          present — a correction replaces what was recorded and is attributed to you.
         </p>
-      )}
-      {notice && <p className="hierarchy-hint">{notice}</p>}
 
-      {classId && (
-        <section className="hierarchy-level" aria-labelledby="sessions-heading">
-          <header className="hierarchy-header">
-            <h2 id="sessions-heading">
-              Recorded lectures {total > 0 && `(${total})`}
+        <section className="fh-panel card" aria-labelledby="filter-heading">
+          <header className="fh-head">
+            <h2 id="filter-heading" className="fh-eyebrow">
+              Choose a class
             </h2>
           </header>
 
-          {loading && <p className="hierarchy-hint">Loading…</p>}
-          {!loading && shown === 0 && (
-            <p className="hierarchy-hint">
-              No attendance has been recorded for this class
-              {from || to ? ' in that date range' : ' yet'}.
+          <div className="fh-form">
+            <span className="form-field fh-field">
+              <label htmlFor="history-class">Class</label>
+              <select
+                id="history-class"
+                value={classId}
+                onChange={(event) => setClassId(event.target.value)}
+              >
+                <option value="">— Select —</option>
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {describeClass(item)}
+                  </option>
+                ))}
+              </select>
+            </span>
+
+            <span className="form-field fh-field fh-field--date">
+              <label htmlFor="history-from">From</label>
+              <input
+                id="history-from"
+                type="date"
+                value={from}
+                max={to || today()}
+                onChange={(event) => setFrom(event.target.value)}
+              />
+            </span>
+
+            <span className="form-field fh-field fh-field--date">
+              <label htmlFor="history-to">To</label>
+              <input
+                id="history-to"
+                type="date"
+                value={to}
+                min={from || undefined}
+                max={today()}
+                onChange={(event) => setTo(event.target.value)}
+              />
+            </span>
+          </div>
+
+          {classes.length === 0 && (
+            <p className="fh-empty">
+              No classes are assigned to you yet. An admin assigns classes from the academic
+              hierarchy screen.
             </p>
           )}
-
-          <ul className="hierarchy-items">
-            {sessions.map((session) => (
-              <li key={session.id}>
-                <span className="user-identity">
-                  <span className="user-name">{session.date}</span>
-                  <span className="hierarchy-hint">
-                    {session.present_count} present · {session.absent_count} absent · from{' '}
-                    {session.source}
-                    {session.edited && ' · edited since it was recorded'}
-                  </span>
-                </span>
-                <button type="button" onClick={() => open(session.id)} disabled={pending}>
-                  {openSession?.id === session.id ? 'Open below' : 'Open'}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          {total > PAGE_SIZE && (
-            <div className="hierarchy-form">
-              <button
-                type="button"
-                onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}
-                disabled={skip === 0 || loading}
-              >
-                ← Newer
-              </button>
-              <button
-                type="button"
-                onClick={() => setSkip(skip + PAGE_SIZE)}
-                disabled={skip + shown >= total || loading}
-              >
-                Older →
-              </button>
-              <span className="hierarchy-hint">
-                Showing {shown === 0 ? 0 : skip + 1}–{skip + shown} of {total}
-              </span>
-            </div>
+          {selectedClass && (
+            <p className="fh-context">
+              {selectedClass.institute} · {selectedClass.department} ·{' '}
+              {selectedClass.semester} · {selectedClass.student_count} enrolled
+            </p>
           )}
         </section>
-      )}
 
-      {openSession && (
-        <section className="hierarchy-level" aria-labelledby="session-heading">
-          <header className="hierarchy-header">
-            <h2 id="session-heading">
-              {openSession.date} ({counts.present} present, {counts.absent} absent)
-            </h2>
-          </header>
-
-          <p className="hierarchy-hint">
-            Recorded from {openSession.source}
-            {openSession.edited && ' · corrected since it was recorded'}. Flip anyone who
-            was marked wrongly, then save.
+        {error && (
+          <p role="alert" className="callout callout--error fh-alert">
+            <span className="callout-mark" aria-hidden="true">
+              !
+            </span>
+            {error}
           </p>
+        )}
+        {notice && (
+          <p className="callout callout--success fh-alert">
+            <span className="callout-mark" aria-hidden="true">
+              ✓
+            </span>
+            {notice}
+          </p>
+        )}
 
-          <ul className="hierarchy-items">
-            {openSession.records.map((row) => (
-              <StudentStatusRow
-                key={row.student.id}
-                student={row.student}
-                detail={
-                  row.marked_by === 'recognition'
-                    ? 'Marked by recognition'
-                    : 'Marked by faculty'
-                }
-                status={working[row.student.id]?.status}
+        {classId && (
+          <section className="fh-sessions" aria-labelledby="sessions-heading">
+            <header className="fh-head">
+              <h2 id="sessions-heading" className="fh-title">
+                Recorded lectures {total > 0 && <span className="fh-count">({total})</span>}
+              </h2>
+            </header>
+
+            {loading && <p className="fh-loading">Loading…</p>}
+            {!loading && shown === 0 && (
+              <p className="fh-empty">
+                No attendance has been recorded for this class
+                {from || to ? ' in that date range' : ' yet'}.
+              </p>
+            )}
+
+            <ul className="fh-list">
+              {sessions.map((session) => (
+                <li
+                  key={session.id}
+                  className={`fh-session${
+                    openSession?.id === session.id ? ' fh-session--open' : ''
+                  }`}
+                >
+                  <span className="fh-session-identity">
+                    <span className="fh-session-date">{session.date}</span>
+                    <span className="fh-session-meta">
+                      <span className="fh-session-facts">
+                        {session.present_count} present · {session.absent_count} absent ·
+                        from {session.source}
+                      </span>
+                      {session.edited && (
+                        <span className="pill pill--warning fh-flag">
+                          edited since it was recorded
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--secondary fh-open"
+                    onClick={() => open(session.id)}
+                    disabled={pending}
+                  >
+                    {openSession?.id === session.id ? 'Open below' : 'Open'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {total > PAGE_SIZE && (
+              <div className="fh-pager">
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}
+                  disabled={skip === 0 || loading}
+                >
+                  ← Newer
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setSkip(skip + PAGE_SIZE)}
+                  disabled={skip + shown >= total || loading}
+                >
+                  Older →
+                </button>
+                <span className="fh-range">
+                  Showing {shown === 0 ? 0 : skip + 1}–{skip + shown} of {total}
+                </span>
+              </div>
+            )}
+          </section>
+        )}
+
+        {openSession && (
+          <section className="fh-detail" aria-labelledby="session-heading">
+            <header className="fh-head">
+              <h2 id="session-heading" className="fh-title">
+                {openSession.date}{' '}
+                <span className="fh-count">
+                  ({counts.present} present, {counts.absent} absent)
+                </span>
+              </h2>
+            </header>
+
+            <p className="fh-provenance">
+              Recorded from {openSession.source}
+              {openSession.edited && (
+                <span className="pill pill--warning fh-flag">
+                  corrected since it was recorded
+                </span>
+              )}
+            </p>
+            <p className="fh-instruction">
+              Flip anyone who was marked wrongly, then save.
+            </p>
+
+            <ul className="fh-roster">
+              {openSession.records.map((row) => (
+                <StudentStatusRow
+                  key={row.student.id}
+                  student={row.student}
+                  detail={
+                    row.marked_by === 'recognition'
+                      ? 'Marked by recognition'
+                      : 'Marked by faculty'
+                  }
+                  status={working[row.student.id]?.status}
+                  disabled={pending}
+                  onToggle={toggle}
+                />
+              ))}
+            </ul>
+
+            <div className="fh-actions">
+              <button
+                type="button"
+                className="btn btn--primary fh-save"
+                onClick={save}
+                disabled={pending || changed.length === 0}
+              >
+                {changed.length === 0
+                  ? 'Save correction'
+                  : `Save correction (${changed.length} changed)`}
+              </button>
+              <button
+                type="button"
+                className="btn btn--danger fh-delete"
+                onClick={() => setDeletePrompt(true)}
                 disabled={pending}
-                onToggle={toggle}
-              />
-            ))}
-          </ul>
-
-          <div className="hierarchy-form">
-            <button type="button" onClick={save} disabled={pending || changed.length === 0}>
-              {changed.length === 0
-                ? 'Save correction'
-                : `Save correction (${changed.length} changed)`}
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => setDeletePrompt(true)}
-              disabled={pending}
-            >
-              Delete this record
-            </button>
-          </div>
-        </section>
-      )}
+              >
+                Delete this record
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
 
       <ConfirmDialog
         open={deletePrompt}

@@ -32,5 +32,7 @@
 @import './styles/student-dashboard.css';
 @import './styles/student-attendance.css';
 @import './styles/faculty-dashboard.css';
+@import './styles/faculty-roster-row.css';
 @import './styles/faculty-attendance.css';
+@import './styles/faculty-history.css';
 @import './styles/scaffolding.css';
