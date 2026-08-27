@@ -98,7 +98,7 @@ function HierarchyLevel({
 
   function renderFields(values, setValues, idPrefix) {
     return fields.map((field) => (
-      <span key={field.name} className="field">
+      <span key={field.name} className="form-field ah-field">
         <label htmlFor={`${idPrefix}-${field.name}`}>{field.label}</label>
         <input
           id={`${idPrefix}-${field.name}`}
@@ -112,48 +112,80 @@ function HierarchyLevel({
   }
 
   return (
-    <section className="hierarchy-level" aria-labelledby={`${noun}-heading`}>
-      <header className="hierarchy-header">
-        <h2 id={`${noun}-heading`}>{title}</h2>
+    <section
+      className={`ah-level${disabled ? ' ah-level--locked' : ''}`}
+      aria-labelledby={`${noun}-heading`}
+    >
+      <header className="ah-head">
+        <h2 id={`${noun}-heading`} className="ah-eyebrow">
+          {title}
+        </h2>
         {!disabled && (
-          <button type="button" onClick={() => setCreating((open) => !open)} disabled={pending}>
+          <button
+            type="button"
+            className="btn btn--secondary ah-add"
+            onClick={() => setCreating((open) => !open)}
+            disabled={pending}
+          >
             {creating ? 'Cancel' : `+ Add ${noun}`}
           </button>
         )}
       </header>
 
       {disabled ? (
-        <p className="hierarchy-hint">{disabledHint}</p>
+        <p className="ah-locked">{disabledHint}</p>
       ) : (
         <>
           {creating && (
-            <form className="hierarchy-form" onSubmit={handleCreate}>
+            <form className="ah-form" onSubmit={handleCreate}>
               {renderFields(createValues, setCreateValues, `new-${noun}`)}
-              <button type="submit" disabled={pending}>
+              <button type="submit" className="btn btn--primary ah-submit" disabled={pending}>
                 {pending ? 'Saving…' : 'Save'}
               </button>
             </form>
           )}
 
-          {error && <p role="alert" className="hierarchy-error">{error}</p>}
-          {actionError && <p role="alert" className="hierarchy-error">{actionError}</p>}
-
-          {loading && <p className="hierarchy-hint">Loading…</p>}
-
-          {!loading && !error && items.length === 0 && (
-            <p className="hierarchy-hint">No {title.toLowerCase()} yet.</p>
+          {error && (
+            <p role="alert" className="callout callout--error ah-alert">
+              <span className="callout-mark" aria-hidden="true">
+                !
+              </span>
+              {error}
+            </p>
+          )}
+          {actionError && (
+            <p role="alert" className="callout callout--error ah-alert">
+              <span className="callout-mark" aria-hidden="true">
+                !
+              </span>
+              {actionError}
+            </p>
           )}
 
-          <ul className="hierarchy-items">
+          {loading && <p className="ah-loading">Loading…</p>}
+
+          {!loading && !error && items.length === 0 && (
+            <p className="ah-empty">No {title.toLowerCase()} yet.</p>
+          )}
+
+          <ul className="ah-items">
             {items.map((item) => (
-              <li key={item.id} className={item.id === selectedId ? 'is-selected' : undefined}>
+              <li
+                key={item.id}
+                className={`ah-item${item.id === selectedId ? ' ah-item--selected' : ''}`}
+              >
                 {editingId === item.id ? (
-                  <form className="hierarchy-form" onSubmit={handleUpdate}>
+                  <form className="ah-form ah-form--edit" onSubmit={handleUpdate}>
                     {renderFields(editValues, setEditValues, `edit-${item.id}`)}
-                    <button type="submit" disabled={pending}>
+                    <button type="submit" className="btn btn--primary ah-submit" disabled={pending}>
                       {pending ? 'Saving…' : 'Save'}
                     </button>
-                    <button type="button" onClick={() => setEditingId(null)} disabled={pending}>
+                    <button
+                      type="button"
+                      className="btn btn--secondary ah-submit"
+                      onClick={() => setEditingId(null)}
+                      disabled={pending}
+                    >
                       Cancel
                     </button>
                   </form>
@@ -161,18 +193,23 @@ function HierarchyLevel({
                   <>
                     <button
                       type="button"
-                      className="hierarchy-select"
+                      className="ah-pick"
                       aria-pressed={item.id === selectedId}
                       onClick={() => onSelect(item.id)}
                     >
                       {itemLabel(item)}
                     </button>
-                    <button type="button" onClick={() => startEditing(item)} disabled={pending}>
+                    <button
+                      type="button"
+                      className="btn btn--secondary ah-action"
+                      onClick={() => startEditing(item)}
+                      disabled={pending}
+                    >
                       Rename
                     </button>
                     <button
                       type="button"
-                      className="danger"
+                      className="btn btn--danger ah-action"
                       onClick={() => {
                         setActionError('')
                         setPendingItem(item)

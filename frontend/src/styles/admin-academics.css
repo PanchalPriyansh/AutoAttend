@@ -1,0 +1,734 @@
+/* --- Academic hierarchy (/admin/academics) ---------------------------
+
+   The densest admin screen in the project, and the only one that is a
+   *walk* rather than a list: Institute -> Department -> Semester ->
+   Course -> Class, each level scoped to the selection above it, then a
+   panel for the class that was landed on. Three files render it --
+   AcademicHierarchy.jsx, HierarchyLevel.jsx (x5) and
+   ClassAssignment.jsx.
+
+   What was actually wrong, in the order it costs the admin time:
+
+     The five levels were identical. A level the admin cannot reach yet
+     ("Select an institute to manage its departments.") looked exactly
+     like one they are working in: same border, same 16px band, same
+     1rem uppercase heading, same grey sentence. The page gave no
+     answer to "how far down am I", which is the only question it is
+     for. Locked levels now recede -- muted heading, a dashed strip
+     rather than a bare caption, and a tighter band -- so the reachable
+     part of the walk is what the eye lands on.
+
+     Every row was three buttons of equal weight. The item's name was a
+     borderless button at the inherited body size, flanked by Rename and
+     Delete at the same size in the same grey chrome, so a list of
+     twenty-five courses read as seventy-five controls. The name is now
+     a step larger, 500, in --text-h; the two actions drop to 0.78rem
+     and shrink. Names form a column; actions sit at the edge.
+
+     The selected row said so in colour and weight alone (accent text on
+     a --surface fill). It now carries a 3px accent rail as well, which
+     is the same "this is the one that is open" mark the faculty history
+     list uses -- and aria-pressed already said it in the accessibility
+     tree.
+
+     Delete was scaffolding's grey button with one red word in it,
+     identical in size, chrome and position to Rename beside it. It
+     composes .btn--danger now: hollow, bordered, filling only on hover.
+
+     Errors were red sentences (.hierarchy-error) and both "Loading..."
+     and "No courses yet." were the same grey caption as the page's
+     intro paragraph -- so an empty level read as a half-drawn screen.
+     Errors are .callout--error, loading is a bordered strip, empty is a
+     dashed box that says the list is empty on purpose.
+
+     ClassAssignment rendered .hierarchy-level and so looked like a
+     sixth level of the hierarchy, when it is the detail of the fifth.
+     It is a .card with an accent rail matching the selected class row
+     above it, and its two student lists -- enrolled, and search results
+     -- were pixel-identical with no heading on the second. The results
+     now sit in their own --bg well under the search field they came
+     from.
+
+     Field chrome disagreed with the rest of the app: 6px corners and
+     0.75rem uppercase labels here, 8px corners and 0.8rem sentence-case
+     labels in components.css. The three `field` spans are `form-field`
+     now, which is the vocabulary's primitive and not scaffolding's.
+
+   Ownership. Everything this page rendered came from scaffolding.css --
+   .hierarchy-level, .hierarchy-header, .hierarchy-hint,
+   .hierarchy-error, .hierarchy-form, .hierarchy-items,
+   .hierarchy-subheading, .hierarchy-select, .field, .user-identity,
+   .user-name, .danger, .is-selected, .is-inactive. All but two of those
+   are still rendered by /admin/users and /admin/face-enrollment, which
+   have not been redesigned, so the markup was renamed onto .ah-* rather
+   than those rules being restyled underneath two screens nobody has
+   looked at yet. Only .hierarchy-select and .is-selected had this page
+   as their sole renderer, and only their rules were deleted from
+   scaffolding.css. ConfirmDialog is out of scope and untouched: it
+   still renders .dialog and .danger, and .dialog button in
+   scaffolding.css still styles it -- nothing below uses a bare element
+   selector, so the dialog inside a level is unaffected.
+
+   .card, .btn (+ --primary/--secondary/--danger), .callout and
+   .form-field come from components.css and are composed, never
+   restyled: every override below is on one of this page's own hooks.
+
+   Vertical rhythm: 20 between levels, 12 inside one, 8 and below within
+   a group -- the faculty screens', so the admin group reads as the same
+   product. 820px is their measure too, and for the same reason: a row
+   puts a name at the left edge and its actions at the right, and past
+   about 820 the two stop reading as one row.
+
+   No transition is declared here. The only animated thing on the page
+   is .btn's colour fade, already guarded for prefers-reduced-motion in
+   components.css. */
+
+/* Capped individually rather than through a wrapper: AcademicHierarchy
+   renders its seven blocks as direct children of the shell's .page, and
+   adding a <div> to hold them would be markup for a margin. */
+.ah-intro,
+.ah-level,
+.ah-class {
+  max-width: 820px;
+}
+
+.ah-intro {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* --- One level -------------------------------------------------------
+
+   Hairline-separated bands rather than five cards. Six stacked panels
+   flatten a page into one texture, and these are the page's content --
+   the same call faculty capture makes about its three rosters. */
+
+.ah-level {
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* A level whose parent has not been chosen yet holds one sentence, and
+   there can be three of them at once (open the page, and Semesters,
+   Courses and Classes are all dormant). At the full band that is most
+   of a laptop screen spent on levels the admin cannot use, pushing the
+   one they can off the fold. */
+.ah-level--locked {
+  padding: 12px 0;
+}
+
+.ah-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* A structural label, not a title: this names a tier of the hierarchy,
+   while the class panel further down names a thing. Same small-caps
+   eyebrow the faculty screens use for the same distinction. */
+.ah-eyebrow {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The heading recedes with the rest of the level. Never the only signal
+   -- the band also loses its Add button, and the sentence below states
+   the condition in words. */
+.ah-level--locked .ah-eyebrow {
+  color: var(--text-muted);
+}
+
+.ah-add {
+  white-space: nowrap;
+}
+
+/* Dashed, like the empty state, because it is the same kind of fact
+   said differently: there is nothing here, and here is why. */
+.ah-locked {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Create and rename forms -----------------------------------------
+
+   .form-field carries the label and the control chrome. What is left is
+   how a row of one to three fields sits beside its Save button. */
+
+.ah-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 12px 0 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* 160px basis holds a Code field at a plausible width; the cap stops a
+   lone Name field from being set across the full 820 measure. Semesters
+   have three fields and wrap to two rows on a narrow window. */
+.ah-field {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 300px;
+}
+
+/* Windows draws a native <select>'s popup from the control's own
+   colours, and an unset background there comes out white-on-white in
+   dark mode. .form-field sets them on the select; this states them on
+   the options, which is the part the OS draws. */
+.ah-field select option {
+  color: var(--text-h);
+  background: var(--bg);
+}
+
+/* Renaming happens inside the row being renamed, so the form takes the
+   whole row and drops to --bg -- the level's --surface panel fill would
+   be invisible against a selected row's tint, and the same fill twice
+   would not read as "this row is now editable". */
+.ah-form--edit {
+  flex: 1 1 100%;
+  margin: 0;
+  background: var(--bg);
+}
+
+.ah-submit {
+  white-space: nowrap;
+}
+
+/* --- Messages and states --------------------------------------------- */
+
+.ah-alert {
+  margin: 12px 0 0;
+  line-height: 1.45;
+}
+
+/* Solid: the list is not empty, it is on its way. A bordered strip
+   rather than a grey caption, because it is a state and not a
+   footnote. */
+.ah-loading {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Dashed: this level really has nothing in it, which on a hierarchy
+   screen is a normal answer rather than a failure to load. The border
+   is what distinguishes it from an unfinished screen. */
+.ah-empty {
+  margin: 12px 0 0;
+  padding: 12px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* --- The items in a level --------------------------------------------
+
+   Hairline-separated rows with no gap between them, rather than
+   6px-gapped rows each with a transparent border. An admin reads a
+   level down its left edge; a stack of separated capsules gives the eye
+   a new starting point per row and doubles the height of a
+   twenty-five-item course list for nothing. */
+
+.ah-items {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+/* An empty level still renders its <ul>, and a bordered list with no
+   rows in it draws a stray hairline under the "No courses yet." box --
+   or, for the search results below, an empty 2px-tall well under the
+   search field before anything has been searched for. React emits no
+   whitespace inside a <ul> built from a .map, so :empty matches. */
+.ah-items:empty,
+.ah-roster:empty {
+  display: none;
+}
+
+/* The 3px left border is transparent on every row, so marking the
+   selected one costs no layout shift. 5 + 3 = the 8px the right edge
+   uses, so text still starts on the list's own margin. */
+.ah-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px 6px 5px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+/* :not(), rather than a plain :hover -- .ah-item--selected below is
+   (0,1,0) and a bare .ah-item:hover would be (0,2,0), so hovering the
+   selected row would repaint over the mark that says it is selected. */
+.ah-item:not(.ah-item--selected):hover {
+  background: var(--surface);
+}
+
+/* The row that scopes every level beneath it. Three signals, none of
+   them colour on its own: the rail, the tint, and the aria-pressed the
+   button already carried. */
+.ah-item--selected {
+  background: var(--accent-weak);
+  border-left-color: var(--accent);
+}
+
+/* The item's name, and the control that selects it -- one element,
+   because the whole label is the target. It dominates the row: a step
+   larger than the two actions beside it, 500, and in --text-h. */
+.ah-pick {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-h);
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  /* A name is unbounded admin input. */
+  overflow-wrap: anywhere;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The row tints on hover, but the row is not the target -- the label
+   is, and Rename and Delete are not. The underline says which. */
+.ah-pick:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ah-item--selected .ah-pick {
+  color: var(--accent);
+}
+
+/* Rename and Delete are how a row is maintained, not how it is read.
+   Smaller than the name and fixed-width, so twenty-five rows form two
+   clean columns at the right edge instead of a field of buttons. */
+.ah-action {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+/* The selected row is tinted --accent-weak, which sits within a few
+   points of --surface -- so Rename, which .btn--secondary fills with
+   --surface, would lose its edge on exactly the row an admin is working
+   in. It takes the inverse fill instead, and its hover moves to
+   --surface so it still travels the same distance the untinted rows do.
+   This is the relationship .card .btn--secondary and
+   .fh-session--open .fh-open both use.
+
+   Scoped to .btn--secondary rather than to .ah-action: Delete is
+   .btn--danger, which is already --bg and whose hover must stay
+   --danger-weak. */
+.ah-item--selected .ah-action.btn--secondary {
+  background: var(--bg);
+}
+
+.ah-item--selected .ah-action.btn--secondary:hover {
+  background: var(--surface);
+}
+
+/* --- The selected class ----------------------------------------------
+
+   ClassAssignment: who teaches this class and who is in it. A card, and
+   the only one on the page, because it is a different kind of object
+   from the five bands above it -- the detail of the row that was
+   selected, not a sixth tier. The accent rail is the same 3px mark that
+   row carries, so the two read as one object even when the list above
+   has scrolled. */
+
+.ah-class {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+}
+
+.ah-class-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+/* A title at a readable size, not the small-caps eyebrow the levels
+   take: this names one class rather than a tier, and it is the heading
+   that tells the admin whose roster they are about to edit. It was
+   1rem uppercase and letterspaced -- the same label as "COURSES"
+   above it. */
+.ah-class-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* One select, saved on change. Not a form panel: it was a padded
+   --surface box built to hold a row of fields, which made a setting
+   look like something you fill in and submit. */
+.ah-assign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+  margin: 0;
+}
+
+/* Wider than a hierarchy field: this holds a person's full name, and
+   the search box below holds "Search by name or email". */
+.ah-assign .ah-field,
+.ah-search .ah-field {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+/* An anomaly, not a hint: the class points at a faculty account the
+   list cannot name. --warning agrees with a sentence that already says
+   so; it takes the whole row so it sits under the select it is about
+   rather than beside it. */
+.ah-note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.8rem;
+}
+
+/* The two halves of the roster work. 20px above, matching the gap
+   between levels, because these are sections of the card rather than
+   lines in it. */
+.ah-subtitle {
+  margin: 20px 0 0;
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* --- A person in the class -------------------------------------------
+
+   Deliberately the same shape as the faculty roster row: an identity
+   block (a strong first line over a muted metadata line) against one
+   control at the far edge. It is the same job on both screens, and this
+   page had borrowed .user-identity/.user-name from the admin user list
+   to build it. */
+
+.ah-roster {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.ah-person {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tracking a name across to its Remove button is the physical act of
+   using this list, and the card is up to 820px wide. --bg because the
+   card underneath is already --surface. */
+.ah-person:hover {
+  background: var(--bg);
+}
+
+/* Deactivated accounts stay in the roster and are marked, because an
+   admin has to see them -- but they are pushed back, and the broken
+   line says so to anyone, including someone who cannot tell the two
+   text colours apart. */
+.ah-person--inactive {
+  border-bottom-style: dashed;
+}
+
+.ah-person-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The name dominates: a step larger than the line under it, heavier,
+   and in --text-h while the email drops to --text-muted. Before this
+   the two were the same size and one shade apart. */
+.ah-person-name {
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.ah-person--inactive .ah-person-name {
+  color: var(--text);
+  text-decoration: line-through;
+}
+
+.ah-person-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.ah-person-email {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* A neutral, factual label -- not a warning. "Deactivated" was the tail
+   of a " . "-joined string on the email line, in the same muted grey,
+   which is how the one fact that decides whether a student can be
+   enrolled ended up as the least visible thing in the row.
+
+   Page-scoped on purpose. components.css has .pill--success and
+   .pill--warning, and this is neither: nothing has gone wrong and
+   nothing is at risk, the account is simply switched off. Written here
+   rather than as a third variant because the vocabulary is extracted
+   from two implementations and this is the first -- see the report. */
+.ah-flag {
+  flex: none;
+  padding: 2px 8px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+/* --- Adding a student ------------------------------------------------- */
+
+.ah-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+  margin: 20px 0 0;
+}
+
+/* The results of the search, in their own well.
+
+   These rows were a second .hierarchy-items, pixel-identical to the
+   enrolled list above and with no heading of any kind -- so after a
+   search the card held two indistinguishable rosters and the only
+   difference was which button sat at the end of a row. The well ties
+   them to the field they came from, and being --bg inside a --surface
+   card says they are output rather than record.
+
+   Overrides .ah-roster's border-top and padding; both are (0,1,0) and
+   this is later in the file. */
+.ah-results {
+  padding: 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* The well's own border closes the list. */
+.ah-results .ah-person:last-child {
+  border-bottom: none;
+}
+
+.ah-results .ah-person:hover {
+  background: var(--surface);
+}
+
+/* --- Narrow widths ---------------------------------------------------
+
+   Nothing above 601px moves, and nothing on a desktop pointer moves at
+   all. Measured in Chrome on the live page at 1440, 1024, 768 and every
+   width down to 320, with a 62-character institute, a 56-character
+   course and a 57-character class in the lists, a long student name and
+   address in both person lists, an open create form, an open rename
+   form and a populated class panel: no horizontal overflow at any width
+   (documentElement.scrollWidth never exceeded clientWidth), and the
+   document is 2,870px tall at 1440 both before and after this block.
+
+   The outer gutter is the constant behind every figure below. base.css
+   pays 32px a side above 480 and 16px at 480 and below, so a level's
+   row is V - 64 up there and V - 32 down here.
+
+   Three rules, and each of the first two sits at the exact width where
+   a flex line stops fitting rather than at a round number, which is how
+   faculty-attendance.css (520) and faculty-history.css (677, 450, 389)
+   place theirs. */
+
+/* --- One field per row, to 601px -------------------------------------
+
+   The create and rename forms are a wrapping strip of .ah-field (basis
+   160, capped at 300) with Save at the end. Three fields and their two
+   gaps need 512px of form interior, and the interior is V - 90 (the
+   gutter, the form's 12px padding, its border), so 602 is the last
+   width at which the Semesters form fits on one line. What it wraps
+   into is not three equal fields: two share a line while the third
+   takes the next one alone, where flex-grow runs it to its 300px cap
+   while its siblings sit at whatever half a row happens to be.
+
+   Measured, Name / Start date / End date, with this rule off:
+
+     610px   163, 163, 163   one line
+     602px   160, 160, 160   one line, exactly the basis
+     601px   162, 162, 262   the pair of dates is 100px apart
+     480px   203, 203, 300   97px apart
+     360px   300, 300, 225   75px apart, and now the pair is split
+                             across two lines as well
+
+   Start date and End date are one control asked twice. Reading them at
+   two different widths is the defect faculty-attendance.css fixed at
+   520 for its two file inputs and faculty-history.css fixed at 389 for
+   its own two dates, and it takes the same fix: below 602 a field is a
+   whole row, so every control in a form is the width of every other.
+
+   flex-basis only -- the 300px cap stays. Dropping it as those two
+   files do would set a two-character `Code` across 510px at 600, which
+   is what the cap is there to prevent. Above 300px of interior the cap
+   also makes the rule exact: two fields would need 616px of interior,
+   which no viewport in this range can offer.
+
+   It applies to all five levels rather than only to Semesters, because
+   the field lists are data -- NAME_AND_CODE, SEMESTER_FIELDS and
+   NAME_ONLY in AcademicHierarchy.jsx -- and a rule keyed to a field
+   count would stop matching the day one of them changed. The two-field
+   forms gain a row for it: the Institutes create form is 189px tall
+   instead of 101 at both 601 and 480. That is a form which is only on
+   screen while something is being typed into it, and its two controls
+   line up in exchange.
+
+   .ah-assign and .ah-search are deliberately not in here. Their fields
+   are 240/360 rather than 160/300, there is one of each, and each still
+   sits beside its own button on one line at 480 (322.3 + 16 + 74.6 in a
+   414px card). Both wrap on their own below that, field over button,
+   which is already the right shape. */
+@media (max-width: 601px) {
+  .ah-form .ah-field {
+    flex-basis: 100%;
+  }
+}
+
+/* --- The name takes the row, to 397px --------------------------------
+
+   A level's row is a wrapping flex line: the name (basis 200, growing)
+   then Rename and Delete, both flex: none. The two actions hold their
+   label widths at every viewport -- 71.4px and 62.7px, measured
+   identical from 1440 to 320 -- so the line needs 200 + 8 + 71.4 + 8 +
+   62.7 = 350.1px against a row interior of V - 48 (the 16px gutters,
+   the row's 8px/5px padding, its 3px rail).
+
+   Measured either side of it, with this rule off:
+
+     398px   name 201, Rename and Delete beside it, row 49px
+     397px   name 270 with Rename beside it, Delete alone on a second
+             line at the row's left edge, row 92px
+
+   Delete on its own line under the name is the worst shape available
+   to it: the two actions stop reading as a pair, and the destructive
+   one lands directly beneath the label a thumb reaches for. Below 398
+   the name takes the whole row instead and both actions drop beneath it
+   together, at the left -- which is what faculty-attendance.css and
+   faculty-history.css give their roster rows at 450, for the same
+   reason and with the same result.
+
+   It costs 7px a row against what the page does today, because the row
+   is already two lines at these widths: 92px broken, 99px stacked with
+   the 44px targets below. In exchange the name gets the full 313px at
+   360 rather than 233 flat or 270 broken, which matters on a page whose
+   names are unbounded admin input -- a 62-character institute sets 4.3
+   lines at 233px and 3 at 313. */
+@media (max-width: 397px) {
+  .ah-pick {
+    flex-basis: 100%;
+  }
+}
+
+/* --- Touch targets ---------------------------------------------------
+
+   .ah-action is the design's density decision: 0.78rem at 4px 10px,
+   which computes to 35.7px tall against the 44.1px a plain .btn gets,
+   and that is right for twenty-five rows on a laptop. It is not right
+   for a thumb. Rename, Delete, Remove and Enroll are the whole of what
+   this page does, two of the four are destructive, and 35.7px is under
+   every touch-target floor except WCAG 2.2 AA's 24px.
+
+   44px is .btn's own height, so this restores the size the rest of the
+   project already uses rather than inventing one, and only where a
+   finger is doing the pointing. Nothing about the chrome, the label or
+   the density on a mouse changes.
+
+   Two conditions, deliberately. The width half is the phone, where the
+   actions have their own line anyway and this costs 7px a row. The
+   pointer half is the tablet, which never reaches 397px and would
+   otherwise keep 35.7px targets at 768 and 1024; forced on at 768 it
+   takes the two buttons to 71.4x44 and 62.7x44, the level row from 49
+   to 57, leaves the person rows at 68 (their identity block is already
+   taller than 44), and adds 100px to a 2,894px document.
+   (pointer: coarse) is the first of its kind in this project -- every
+   other rule here is keyed to width -- and it is used because a touch
+   target is a property of the input device, not of the viewport.
+
+   .ah-pick is left at 34.1px for a one-line name: it is 200-654px wide,
+   the whole label is the target, and 10px on every row is another
+   250px of scrolling on a page that is already 4,592px at 360. */
+@media (max-width: 397px), (pointer: coarse) {
+  .ah-action {
+    min-height: 44px;
+  }
+}
+
+/* --- The class card's gutter, to 480px -------------------------------
+
+   .card's 20px is 40px of a 328px card at 360, and everything in the
+   panel is measured from what is left: the faculty select, the search
+   field, and both person lists, whose rows carry an address on the
+   metadata line. Measured at 360 with a real one
+   (24dcs109@charusat.edu.in, 165.1px wide): the identity block is
+   180.1px in the enrolled list and 169.4px inside the results well,
+   which spends 12px a side of its own -- so the address clears its line
+   by 4.3px there, and one more digit of roll number wraps it.
+
+   16px hands 8px back to all of them: 188.1 and 177.4, and 294px of
+   card interior instead of 286. This buys measure rather than fixing a
+   break -- nothing below 480 was overflowing, and an address that wraps
+   wraps to two lines -- and it is the same reclaim student-dashboard.css
+   and admin-portal.css make on their own cards once base.css has taken
+   the outer gutter down to 16. Uniform on all four sides here, where
+   those two move only the right gutter, because this card has no
+   chevron tuned against its padding-top. */
+@media (max-width: 480px) {
+  .ah-class {
+    padding: 16px;
+  }
+}

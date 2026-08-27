@@ -177,35 +177,8 @@
   text-wrap: balance;
 }
 
-/* The landing pages' list of destinations, rendered from navigation.js.
-   Still temporary, and now only for /admin -- /student and /faculty have
-   both been redesigned and render .student-home-* and .faculty-home-*
-   instead, so this block no longer reaches either of them. It dies with
-   the admin group. Not a general-purpose card. */
-.portal-links {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.portal-link {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.portal-link a {
-  color: var(--text-h);
-  font-weight: 500;
-}
-
-.portal-link p {
-  margin: 0;
-  font-size: 0.85rem;
-}
+/* .portal-links / .portal-link used to live here: the landing pages'
+   list of destinations, rendered from navigation.js. All three landing
+   pages have now been redesigned onto their own hooks -- .student-home-*,
+   .faculty-home-* and .admin-portal-* -- so the block had no renderer
+   left and has been deleted rather than kept alive. */

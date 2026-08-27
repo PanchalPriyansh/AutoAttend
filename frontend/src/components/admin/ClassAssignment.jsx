@@ -120,25 +120,33 @@ function ClassAssignment({ classItem, onClassChanged }) {
   const addable = studentResults.filter((student) => !enrolledIds.has(student.id))
 
   return (
-    <section className="hierarchy-level" aria-labelledby="class-assignment-heading">
-      <header className="hierarchy-header">
-        <h2 id="class-assignment-heading">Class: {classItem.name}</h2>
+    <section className="card ah-class" aria-labelledby="class-assignment-heading">
+      <header className="ah-class-head">
+        <h2 id="class-assignment-heading" className="ah-class-title">
+          Class: {classItem.name}
+        </h2>
       </header>
 
       {error && (
-        <p role="alert" className="hierarchy-error">
+        <p role="alert" className="callout callout--error ah-alert">
+          <span className="callout-mark" aria-hidden="true">
+            !
+          </span>
           {error}
         </p>
       )}
       {actionError && (
-        <p role="alert" className="hierarchy-error">
+        <p role="alert" className="callout callout--error ah-alert">
+          <span className="callout-mark" aria-hidden="true">
+            !
+          </span>
           {actionError}
         </p>
       )}
-      {loading && <p className="hierarchy-hint">Loading…</p>}
+      {loading && <p className="ah-loading">Loading…</p>}
 
-      <div className="hierarchy-form">
-        <span className="field">
+      <div className="ah-assign">
+        <span className="form-field ah-field">
           <label htmlFor="assign-faculty">Assigned faculty</label>
           <select
             id="assign-faculty"
@@ -158,32 +166,32 @@ function ClassAssignment({ classItem, onClassChanged }) {
           </select>
         </span>
         {classItem.faculty_id && !assigned && (
-          <p className="hierarchy-hint">Assigned to a faculty member not in the list.</p>
+          <p className="ah-note">Assigned to a faculty member not in the list.</p>
         )}
       </div>
 
-      <h3 className="hierarchy-subheading">Enrolled students ({enrollments.length})</h3>
+      <h3 className="ah-subtitle">Enrolled students ({enrollments.length})</h3>
 
       {!loading && enrollments.length === 0 && (
-        <p className="hierarchy-hint">No students enrolled yet.</p>
+        <p className="ah-empty">No students enrolled yet.</p>
       )}
 
-      <ul className="hierarchy-items">
+      <ul className="ah-roster">
         {enrollments.map((enrollment) => (
           <li
             key={enrollment.id}
-            className={enrollment.student.is_active ? undefined : 'is-inactive'}
+            className={`ah-person${enrollment.student.is_active ? '' : ' ah-person--inactive'}`}
           >
-            <span className="user-identity">
-              <span className="user-name">{enrollment.student.name}</span>
-              <span className="hierarchy-hint">
-                {enrollment.student.email}
-                {!enrollment.student.is_active && ' · Deactivated'}
+            <span className="ah-person-identity">
+              <span className="ah-person-name">{enrollment.student.name}</span>
+              <span className="ah-person-meta">
+                <span className="ah-person-email">{enrollment.student.email}</span>
+                {!enrollment.student.is_active && <span className="ah-flag">Deactivated</span>}
               </span>
             </span>
             <button
               type="button"
-              className="danger"
+              className="btn btn--danger ah-action"
               onClick={() => {
                 setActionError('')
                 setPendingRemoval(enrollment)
@@ -196,8 +204,8 @@ function ClassAssignment({ classItem, onClassChanged }) {
         ))}
       </ul>
 
-      <form className="hierarchy-form" onSubmit={handleSearchStudents}>
-        <span className="field">
+      <form className="ah-search" onSubmit={handleSearchStudents}>
+        <span className="form-field ah-field">
           <label htmlFor="enroll-search">Add a student</label>
           <input
             id="enroll-search"
@@ -207,29 +215,42 @@ function ClassAssignment({ classItem, onClassChanged }) {
             placeholder="Search by name or email"
           />
         </span>
-        <button type="submit" disabled={pending}>
+        <button type="submit" className="btn btn--secondary ah-submit" disabled={pending}>
           Search
         </button>
       </form>
 
       {searched && addable.length === 0 && (
-        <p className="hierarchy-hint">No matching students left to add.</p>
+        <p className="ah-empty">No matching students left to add.</p>
       )}
 
-      <ul className="hierarchy-items">
+      <ul className="ah-roster ah-results">
         {addable.map((student) => (
-          <li key={student.id} className={student.is_active ? undefined : 'is-inactive'}>
-            <span className="user-identity">
-              <span className="user-name">{student.name}</span>
-              <span className="hierarchy-hint">
-                {student.email}
-                {!student.is_active && ' · Deactivated'}
+          <li
+            key={student.id}
+            className={`ah-person${student.is_active ? '' : ' ah-person--inactive'}`}
+          >
+            <span className="ah-person-identity">
+              <span className="ah-person-name">{student.name}</span>
+              <span className="ah-person-meta">
+                <span className="ah-person-email">{student.email}</span>
+                {!student.is_active && <span className="ah-flag">Deactivated</span>}
               </span>
             </span>
             <button
               type="button"
+              className="btn btn--primary ah-action"
               onClick={() => handleEnroll(student.id)}
               disabled={pending || !student.is_active}
+              /* A disabled button is not focusable and title is unreliable
+                 for assistive tech, so the reason has to be in the
+                 accessible name to reach anyone not hovering a mouse.
+                 title stays for the mouse hover it does serve. */
+              aria-label={
+                student.is_active
+                  ? undefined
+                  : `Enroll ${student.name} — unavailable, account deactivated`
+              }
               title={student.is_active ? undefined : 'Deactivated accounts cannot be enrolled'}
             >
               Enroll

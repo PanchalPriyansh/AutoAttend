@@ -35,4 +35,6 @@
 @import './styles/faculty-roster-row.css';
 @import './styles/faculty-attendance.css';
 @import './styles/faculty-history.css';
+@import './styles/admin-portal.css';
+@import './styles/admin-academics.css';
 @import './styles/scaffolding.css';

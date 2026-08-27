@@ -103,24 +103,11 @@
   border-radius: 6px;
 }
 
-.hierarchy-items li.is-selected {
-  border-color: var(--accent);
-  background: var(--surface);
-}
-
-.hierarchy-select {
-  flex: 1 1 auto;
-  text-align: left;
-  color: var(--text-h);
-  background: none;
-  border: none;
-  padding: 4px 0;
-}
-
-.hierarchy-items li.is-selected .hierarchy-select {
-  color: var(--accent);
-  font-weight: 500;
-}
+/* .hierarchy-select and .is-selected used to live here -- the selectable
+   label in a hierarchy row and the mark on the selected one. Both were
+   rendered by HierarchyLevel.jsx and by nothing else in the project, so
+   /admin/academics moving onto .ah-pick / .ah-item--selected left all
+   three rules with no renderer. Deleted rather than kept alive. */
 
 .hierarchy-level button,
 .dialog button {

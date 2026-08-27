@@ -17,10 +17,10 @@
    look the same in both portals -- inventing a second affordance for the
    same act would be difference for its own sake.
 
-   These rules replace .portal-links / .portal-link for this page only.
-   Those two classes are still rendered by /admin, which has not been
-   redesigned, and are left untouched in shell.css -- this page simply
-   stopped using them, so nothing here can reach the admin portal.
+   These rules replaced .portal-links / .portal-link for this page. Those
+   two classes were still rendered by /admin at the time and were left
+   untouched in shell.css; /admin has since moved onto .admin-portal-*,
+   so that block is gone. Nothing here can reach the admin portal.
 
    The <ul>/<li> stay: it is a list of links, and the map produces it. */
 
@@ -79,8 +79,29 @@
   padding: 20px 48px 20px 20px;
   transition:
     border-color 120ms ease,
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+    background-color 120ms ease;
+}
+
+/* The hover shadow is faded in on its own layer rather than transitioned
+   on the card. box-shadow cannot be composited, so animating it repaints
+   the card every frame; opacity is handed to the compositor instead.
+
+   ::before is free -- the chevron is the card's ::after, the stretched
+   hit area is the link's. inset is -1px because an absolutely positioned
+   child resolves against the padding box, so -1px puts the layer back on
+   the border-box edge where the shadow was drawn before. It covers
+   nothing (the shadow paints outside its own box) and takes no clicks.
+
+   All three portals do this identically -- see admin-portal.css. */
+.faculty-home-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 /* The "go here" chevron, drawn from two borders rather than set as text
@@ -116,6 +137,10 @@
   font-weight: 500;
   line-height: 1.3;
   text-decoration: none;
+  /* navigation.js owns these labels and today's are short. A long one
+     added later has to break inside the card rather than run under the
+     chevron gutter and out the side. */
+  overflow-wrap: break-word;
   touch-action: manipulation;
   /* Set deliberately rather than left to the UA: the tap target is the
      stretched ::after below, but the default highlight is drawn around
@@ -148,7 +173,10 @@
 
 .faculty-home-card:hover {
   border-color: var(--accent);
-  box-shadow: var(--shadow);
+}
+
+.faculty-home-card:hover::before {
+  opacity: 1;
 }
 
 .faculty-home-card:hover .faculty-home-link {
@@ -166,7 +194,10 @@
 .faculty-home-card:has(.faculty-home-link:active) {
   background: var(--accent-weak);
   border-color: var(--accent);
-  box-shadow: none;
+}
+
+.faculty-home-card:has(.faculty-home-link:active)::before {
+  opacity: 0;
 }
 
 /* The ring goes on the stretched overlay so it outlines the card that is
@@ -217,6 +248,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .faculty-home-card,
+  .faculty-home-card::before,
   .faculty-home-card::after {
     transition: none;
   }

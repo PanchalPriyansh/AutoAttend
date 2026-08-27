@@ -1,0 +1,309 @@
+/* --- Admin portal (/admin) ------------------------------------------
+
+   The admin's landing page: the places this role can go, read from
+   navigation.js. Nothing here is academic data and nothing is fetched --
+   three labels and three sentences are the whole of the material.
+
+   Laid out as a board rather than as a stack or a pair, which is the
+   difference between this page and the other two portals. A student has
+   one destination and gets a single door; faculty have two tasks and get
+   a pair read in one glance. An admin has a set of tools and arrives
+   already knowing which job they came to do, so the whole set goes on
+   one row and the choice is made in one sweep instead of three.
+
+   What is shared with the other two portals on purpose: the card, the
+   whole-card hit area, the chevron, and the hover/press/focus mechanics.
+   "This goes somewhere" should look identical in all three portals --
+   inventing a third affordance for the same act would be difference for
+   its own sake. This is now the third implementation of that pattern;
+   the report on this pass recommends extracting it.
+
+   These rules replace .portal-links / .portal-link, which this page was
+   the last renderer of. That block has been deleted from shell.css in
+   the same pass rather than left behind.
+
+   The <ul>/<li> stay: it is a list of links, and the map produces it. */
+
+.admin-portal {
+  display: grid;
+  /* As many 320px columns as fit, which is three at the .page's 1100px
+     (3 x 320 + 2 x 16 = 992; a fourth column would need 1328) and one on
+     a phone. The 320 floor is the measured one from
+     faculty-dashboard.css and holds for the same reason: a 320px track
+     spends 70px on the card's padding and border, so the sentence still
+     gets 250px and four lines rather than six.
+
+     No max-width cap, unlike the faculty pair. That cap exists because
+     two cards stretched across 1100px set their descriptions at a ~500px
+     measure; three cards across the same width are 356px each and set
+     theirs at 286px, which is already a comfortable measure. Capping
+     further would shorten the row without helping anyone read it.
+
+     min(...,100%) so a track can never be wider than its container --
+     without it the 320px floor is a hard minimum and pushes a horizontal
+     scrollbar onto viewports narrower than 320 plus #root's gutters. */
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- The laptop band ------------------------------------------------
+
+   The 320px floor above needs 992px of grid for three tracks, which is
+   a 1056px viewport once #root's 64px is paid. A 1440px window is
+   therefore three across as designed -- but a 1024px laptop, which is
+   the second width this project targets, is 32px short of the hand-off
+   and falls to two columns. Measured, before this rule:
+
+     1056px  ->  3 x 320px, one row, 4-line descriptions
+     1024px  ->  2 x 472px + a third card alone on row two, beside a
+                 472px hole, at 2-line descriptions
+
+   That is a cliff, not a gradient: 32px of viewport changes the shape of
+   the page rather than the size of its cards, and it lands on the wrong
+   side of a common laptop. It also loses the one thing this page is laid
+   out for -- the whole set read in one sweep -- at the width where an
+   admin is most likely to be working.
+
+   So the floor drops to 300px, but only up here. Three 300px tracks need
+   996px of viewport, which clears 1024 with room for a scrollbar; at
+   1024 the cards come out 309px and the descriptions run four lines,
+   which is what the 1056px layout already does at 320px and 4 lines. The
+   two neighbouring widths now differ by 11px of card instead of by their
+   structure.
+
+   Scoped to min-width rather than applied to the base rule because a
+   300px floor lower down is worse than what is there now. Measured with
+   the floor changed globally: the 660-719px band becomes two 300-320px
+   cards at four lines each, where today it is one 596-636px card at two.
+   That band is a small tablet in portrait and it is currently correct --
+   the 320px floor is what keeps it correct, and it keeps it.
+
+   Still auto-fit and not repeat(3, 1fr): a fourth destination should
+   still wrap on its own terms rather than be forced into a row of three.
+   At 1440 this changes nothing -- the grid is capped at .page's 1100px,
+   a fourth 300px track would need 1248px, so it is three 356px cards
+   either way. Verified identical. */
+@media (min-width: 1000px) {
+  .admin-portal {
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  }
+}
+
+/* .card carries the fill, the hairline and the corner. What is left here
+   is this page's: the gutter the chevron needs, and the fact that the
+   whole card is a target and so has to react to hover and to press.
+
+   The previous .portal-link had a border and no fill, at 12px of padding
+   and an 8px corner, so the three landing pages disagreed about what a
+   destination looks like. This composes the same .card the other two do. */
+.admin-portal-card {
+  position: relative;
+  padding: 20px 48px 20px 20px;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+/* The hover shadow lives on its own layer and is faded in, rather than
+   transitioned on the card itself. box-shadow cannot be composited, so
+   animating it repaints the card every frame; opacity on a layer that
+   already exists is handed to the compositor instead.
+
+   ::before is free here -- the chevron is the card's ::after and the
+   stretched hit area is the link's. It paints above the card's
+   background but draws only outside its own border box, so it covers
+   nothing, and pointer-events is off so it cannot eat a click.
+
+   Still var(--shadow), so the dark palette's darker well is picked up
+   exactly as before. */
+.admin-portal-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+/* The "go here" chevron, drawn from two borders rather than set as text
+   so no assistive technology announces a stray character. pointer-events
+   is off because it paints over the stretched hit area below, and a
+   click landing on the chevron would otherwise do nothing.
+
+   `top` is tuned against the label's first line -- 20px of padding plus
+   half of a 1.15rem/1.3 line box -- so changing the card's padding-top
+   would pull it off that line. */
+.admin-portal-card::after {
+  content: '';
+  position: absolute;
+  top: 27px;
+  right: 20px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  border-radius: 1px;
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition: transform 120ms ease;
+}
+
+/* The destination dominates: larger and heavier than the sentence under
+   it, and in --text-h while the sentence stays at --text. Before this,
+   the two were separated by weight alone at the same 18px root size, so
+   a two-word label and a two-line sentence read as one block and the
+   three destinations did not separate from their own descriptions.
+
+   Size and weight carry the hierarchy now, so the label is not also
+   underlined at rest -- the card already reads as a target. */
+.admin-portal-link {
+  color: var(--text-h);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-decoration: none;
+  /* navigation.js owns these labels, and today's three are short. A long
+     one added later has to break inside the card rather than run under
+     the chevron gutter and out the side. */
+  overflow-wrap: break-word;
+  touch-action: manipulation;
+  /* Set deliberately rather than left to the UA: the tap target is the
+     stretched ::after below, but the default highlight is drawn around
+     the *link's own* box, so a tap anywhere on the card flashed a
+     rectangle around the label alone. The :has(:active) rule further
+     down tints the whole card instead, which is the right shape. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stretches the link over the whole card, so the sentence and the
+   padding are part of the target rather than a dead margin around one
+   26px line of text. This is the biggest fix on the page: the previous
+   markup made a one- or two-word label the only clickable thing inside a
+   full-width bordered box that looked clickable everywhere.
+
+   Done from CSS rather than by moving the <p> inside the <a>, which
+   would make the link's accessible name the entire paragraph. */
+.admin-portal-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+}
+
+/* Kept at --text rather than dropped to --text-muted: two of these three
+   sentences end in an operating constraint the admin needs to read
+   ("There is no public sign-up.", "Photos are never stored."), so the
+   description is secondary to the label but is not fine print. */
+.admin-portal-desc {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.admin-portal-card:hover {
+  border-color: var(--accent);
+}
+
+.admin-portal-card:hover::before {
+  opacity: 1;
+}
+
+.admin-portal-card:hover .admin-portal-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.admin-portal-card:hover::after {
+  transform: translateX(3px) rotate(45deg);
+}
+
+/* Pressed feedback belongs on the card, because the card is what was
+   pressed. Where :has() is unsupported the card simply does not tint,
+   which costs nothing. */
+.admin-portal-card:has(.admin-portal-link:active) {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+.admin-portal-card:has(.admin-portal-link:active)::before {
+  opacity: 0;
+}
+
+/* The ring goes on the stretched overlay so it outlines the card that is
+   about to open, not the two words of the label. The outline on the <a>
+   itself is dropped only because it would draw a second, tighter ring
+   inside this one -- the replacement is strictly more visible, and an
+   admin who provisions accounts all day is likely to be on the keyboard
+   when they arrive here. */
+.admin-portal-link:focus-visible {
+  outline: none;
+}
+
+.admin-portal-link:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- Narrow widths -------------------------------------------------
+
+   Below 420px the grid is one card wide, and the 48px right gutter is
+   reserved for an 8px chevron, so it stops being proportionate as the
+   card narrows. Dropping it to 36px returns 12px to every description.
+
+   This rule was carried over from faculty-dashboard.css, and its
+   original note has been corrected against what the browser actually
+   does here. Two things in it were wrong for this page:
+
+   The card is not 296px at 360px, it is 328px. That figure assumed
+   #root's 32px gutters, but base.css drops them to 16px at 480px and
+   below -- so the card is 32px wider through this whole range than the
+   borrowed comment claimed.
+
+   And the 12px does not buy a line at every width. Measured, with the
+   rule off and then on:
+
+     420px   3,2,2 lines  ->  3,2,2   (nothing, already fits)
+     400px   3,3,3        ->  3,2,2   (a line off two cards, 44px)
+     375px   3,3,3        ->  3,3,3   (nothing)
+     360px   3,3,3        ->  3,3,3   (nothing)
+     320px   4,4,3        ->  4,3,3   (a line off one card, 23px)
+
+   So at the two widths this project actually targets down here it buys
+   measure but no height. It is kept because 12px of measure is a real
+   improvement at a 270px line and it costs nothing -- never worse, and
+   materially better at 400 and 320 -- but it should not be described as
+   the fix it is not.
+
+   Only the right gutter moves. The 20px on the other three sides is the
+   card's breathing room; padding-top in particular is what the chevron's
+   `top: 27px` is tuned against, so changing it here would pull the
+   chevron off the label's first line. The chevron comes in with the
+   gutter rather than staying put, so the clearance between the sentence
+   and the glyph is preserved at 12px rather than merely squeezed. */
+@media (max-width: 420px) {
+  .admin-portal-card {
+    padding-right: 36px;
+  }
+
+  .admin-portal-card::after {
+    right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-portal-card,
+  .admin-portal-card::before,
+  .admin-portal-card::after {
+    transition: none;
+  }
+
+  .admin-portal-card:hover::after {
+    transform: rotate(45deg);
+  }
+}

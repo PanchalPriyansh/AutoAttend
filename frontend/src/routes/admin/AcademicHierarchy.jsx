@@ -142,7 +142,7 @@ function AcademicHierarchy() {
 
   return (
     <AppShell title="Academic Hierarchy">
-      <p className="hierarchy-hint">
+      <p className="ah-intro">
         Institute → Department → Semester → Course → Class. Select an item to manage the level
         beneath it.
       </p>
