@@ -465,26 +465,13 @@
    one fact deciding whether the person can log in. It was the tail of
    a " . "-joined string in the same grey as the address.
 
-   Page-scoped on purpose, and identical to .ah-flag in
-   admin-academics.css by design rather than by accident: that is the
-   *first* independent implementation and this is the second, which is
-   exactly the condition components.css extracts on. It is written here
-   rather than as a .pill--neutral because extracting it now would mean
-   either editing a page this pass was not asked to touch, or shipping
-   a variant that one page composes while the page beside it still
-   hand-rolls the same rectangle. /admin/face-enrollment marks
-   deactivated students the same way and is page 2 of this group -- see
-   the report: the extraction belongs to the teardown step, where all
-   three can move at once. */
+   It is .pill--neutral in components.css now -- this rule was the
+   second of the three independent implementations the extraction
+   waited on, and all three moved together in the teardown step. Only
+   the arrangement stays here: flex: none is how this row lays the flag
+   out, not what it is. */
 .au-flag {
   flex: none;
-  padding: 2px 8px;
-  color: var(--text);
-  font-size: 0.75rem;
-  font-weight: 500;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
 }
 
 /* --- The row's actions -----------------------------------------------

@@ -3,6 +3,10 @@ import { useEffect, useRef } from 'react'
 /**
  * Confirmation prompt shown before a destructive action, so deleting part
  * of the academic hierarchy is never a single accidental click.
+ *
+ * Rendered by six files across admin and faculty, which is why it is
+ * styled by styles/confirm-dialog.css -- its own stylesheet rather than
+ * any one page's. See the note at the top of that file.
  */
 function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', pending, onConfirm, onCancel }) {
   const cancelRef = useRef(null)
@@ -30,10 +34,21 @@ function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', pending,
         <h2 id="confirm-title">{title}</h2>
         <p>{message}</p>
         <div className="dialog-actions">
-          <button type="button" ref={cancelRef} onClick={onCancel} disabled={pending}>
+          <button
+            type="button"
+            className="btn btn--secondary"
+            ref={cancelRef}
+            onClick={onCancel}
+            disabled={pending}
+          >
             Cancel
           </button>
-          <button type="button" className="danger" onClick={onConfirm} disabled={pending}>
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={onConfirm}
+            disabled={pending}
+          >
             {pending ? 'Working…' : confirmLabel}
           </button>
         </div>

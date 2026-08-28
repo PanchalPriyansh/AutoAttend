@@ -422,22 +422,12 @@
 /* A neutral, factual label -- not a warning. The account is not at risk
    and nothing has gone wrong; it is switched off.
 
-   Page-scoped on purpose, and identical to .ah-flag in
-   admin-academics.css and .au-flag in admin-users.css by design rather
-   than by accident. This is the THIRD independent implementation, and
-   the extraction into .pill--neutral -- migrating all three at once --
-   belongs to the teardown step that follows this page, not to a pass
-   that would otherwise have to edit two shipped screens it was not
-   asked to touch. See the report. */
+   It is .pill--neutral in components.css now -- this rule was the
+   third implementation, and the teardown step moved all three there at
+   once. Only the arrangement stays here: flex: none is how this row
+   lays the flag out, not what it is. */
 .fe-flag {
   flex: none;
-  padding: 2px 8px;
-  color: var(--text);
-  font-size: 0.75rem;
-  font-weight: 500;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
 }
 
 /* How many samples this student has, which is the one number on the

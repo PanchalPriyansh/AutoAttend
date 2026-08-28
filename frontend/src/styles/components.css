@@ -271,6 +271,30 @@
   border-color: var(--warning);
 }
 
+/* The absence of a condition rather than one: a deactivated account is
+   not at risk and nothing has gone wrong, it is simply switched off.
+   --success-weak and --warning-weak would both say something untrue,
+   so this takes the page's own --bg against the ordinary border.
+
+   Extracted last, and from three implementations rather than the usual
+   two. /admin/academics wrote .ah-flag, /admin/users wrote .au-flag and
+   /admin/face-enrollment wrote .fe-flag, each byte-identical to the
+   others and each reported as evidence rather than extracted on the
+   spot -- extracting from the second would have meant editing a shipped
+   page mid-pass, or shipping a variant one page composed while the page
+   beside it still hand-rolled the same rectangle. All three moved here
+   together in the teardown step.
+
+   `flex: none` is deliberately NOT here. Every one of the three rows
+   needs it, but it is how a page arranges the flag, not what the flag
+   is -- the same split .fe-samples-none already makes against
+   .pill--warning. Each page keeps its own hook for it. */
+.pill--neutral {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
 /* --- Field -----------------------------------------------------------
 
    Extracted from .auth-field and .sa-field: a label stacked over its
@@ -281,14 +305,17 @@
    from both -- this is the one place the file runs a step ahead of its
    users rather than behind them.
 
-   NAMED .form-field, not .field, because `.field` is taken: twenty-two
-   spans across ten un-redesigned admin and faculty files already render
-   it, styled by `.hierarchy-form .field` in scaffolding.css. Those beat a
-   bare `.field` rule on specificity, so the layout would have survived --
-   but `.field label` and `.field input:hover` have no counterpart there
-   and would have silently restyled every form on eleven pages nobody has
-   designed yet. The other four primitives here collide with nothing and
-   keep their plain names. */
+   NAMED .form-field, not .field, because `.field` was taken when this
+   was written: twenty-two spans across ten un-redesigned admin and
+   faculty files rendered it, styled by `.hierarchy-form .field` in
+   scaffolding.css. Those beat a bare `.field` rule on specificity, so
+   the layout would have survived -- but `.field label` and `.field
+   input:hover` had no counterpart there and would have silently
+   restyled every form on eleven pages nobody had designed yet. Both
+   `.field` and scaffolding.css are gone now, every one of those spans
+   having been renamed onto this primitive as its page was redesigned.
+   The name stays: it is what eleven files render, it is accurate, and
+   renaming it back would be churn for a shorter selector. */
 .form-field {
   display: flex;
   flex-direction: column;

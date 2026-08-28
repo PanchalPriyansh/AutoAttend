@@ -12,21 +12,43 @@
      components    the shared primitives, before every page that uses
                    them -- so a page can override one with a plain later
                    rule instead of a more specific selector
+     <component>   a component rendered by more than one page, after the
+                   primitives it composes and before every page that
+                   renders it, so any of them could override it
      login         signed out, renders no shell
      shell         the frame the nine signed-in pages sit in
-     <page>        one file per redesigned page, after the frame it
-                   sits in and before the scaffolding it replaces
-     scaffolding   everything not yet redesigned (see below)
+     <page>        one file per page, after the frame it sits in and
+                   after every component it renders
 
-   `scaffolding.css` is the styling written while the features were being
-   built. It is temporary. Each /frontend-maker group replaces part of it
-   with a file of its own -- login.css is the first -- so that file should
-   shrink every time a group lands, and when it is empty the redesign is
-   finished. Add to it only to keep an undesigned page working. */
+   `scaffolding.css` used to sit last, holding the styling written while
+   the features were being built. It is gone: the redesign replaced it
+   page by page, each group carving its pages out of it, and the last of
+   it -- ConfirmDialog -- became confirm-dialog.css above. Nothing in
+   this project is styled by a file named after something other than
+   what it styles any more.
+
+   There are two shared-component files, and both exist for the same
+   reason: a component rendered by several pages belongs to none of
+   them. faculty-roster-row.css is StudentStatusRow, rendered by the two
+   faculty attendance pages; confirm-dialog.css is ConfirmDialog,
+   rendered by six files across admin and faculty. Neither is a
+   primitive -- components.css is for patterns with two INDEPENDENT
+   implementations, and these are single components used more than once.
+
+   They sit at different points on purpose, and it is not an
+   inconsistency. confirm-dialog.css is here, directly after the
+   primitives, because every one of its six renderers is below it and
+   the dialog renders in a fixed overlay that no page lays out.
+   faculty-roster-row.css stays where it has always been, immediately
+   before the two pages that render it -- it was placed there when the
+   history page was built, both of those pages override it with plain
+   later selectors, and moving it up here would put six unrelated
+   stylesheets between it and the rules that depend on losing to it. */
 
 @import './styles/tokens.css';
 @import './styles/base.css';
 @import './styles/components.css';
+@import './styles/confirm-dialog.css';
 @import './styles/login.css';
 @import './styles/shell.css';
 @import './styles/student-dashboard.css';
@@ -39,4 +61,3 @@
 @import './styles/admin-academics.css';
 @import './styles/admin-users.css';
 @import './styles/admin-face-enrollment.css';
-@import './styles/scaffolding.css';

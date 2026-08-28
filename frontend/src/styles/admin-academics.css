@@ -64,10 +64,11 @@
    than those rules being restyled underneath two screens nobody has
    looked at yet. Only .hierarchy-select and .is-selected had this page
    as their sole renderer, and only their rules were deleted from
-   scaffolding.css. ConfirmDialog is out of scope and untouched: it
-   still renders .dialog and .danger, and .dialog button in
-   scaffolding.css still styles it -- nothing below uses a bare element
-   selector, so the dialog inside a level is unaffected.
+   scaffolding.css. ConfirmDialog was out of scope for this pass and
+   left untouched; it moved onto styles/confirm-dialog.css in the
+   teardown step that ended the redesign. Nothing below uses a bare
+   element selector, so the dialog inside a level is unaffected either
+   way.
 
    .card, .btn (+ --primary/--secondary/--danger), .callout and
    .form-field come from components.css and are composed, never
@@ -514,20 +515,13 @@
    which is how the one fact that decides whether a student can be
    enrolled ended up as the least visible thing in the row.
 
-   Page-scoped on purpose. components.css has .pill--success and
-   .pill--warning, and this is neither: nothing has gone wrong and
-   nothing is at risk, the account is simply switched off. Written here
-   rather than as a third variant because the vocabulary is extracted
-   from two implementations and this is the first -- see the report. */
+   It is .pill--neutral in components.css now, extracted in the
+   teardown step together with .au-flag on /admin/users and .fe-flag on
+   /admin/face-enrollment -- three byte-identical implementations, moved
+   at once rather than one at a time. Only the arrangement stays here:
+   flex: none is how this row lays the flag out, not what it is. */
 .ah-flag {
   flex: none;
-  padding: 2px 8px;
-  color: var(--text);
-  font-size: 0.75rem;
-  font-weight: 500;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
 }
 
 /* --- Adding a student ------------------------------------------------- */

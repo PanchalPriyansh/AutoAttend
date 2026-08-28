@@ -296,7 +296,7 @@ function UserManagement() {
                   <span className="au-meta">
                     <span className="au-email">{row.email}</span>
                     <span className="au-role">{row.role}</span>
-                    {!row.is_active && <span className="au-flag">Deactivated</span>}
+                    {!row.is_active && <span className="pill pill--neutral au-flag">Deactivated</span>}
                   </span>
                 </span>
 

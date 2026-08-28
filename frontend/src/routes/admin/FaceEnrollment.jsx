@@ -294,7 +294,7 @@ function FaceEnrollment() {
                     <span className="fe-name">{row.student.name}</span>
                     <span className="fe-meta">
                       <span className="fe-email">{row.student.email}</span>
-                      {!row.student.is_active && <span className="fe-flag">Deactivated</span>}
+                      {!row.student.is_active && <span className="pill pill--neutral fe-flag">Deactivated</span>}
                       {row.sample_count === 0 ? (
                         <span className="pill pill--warning fe-samples-none">No face samples</span>
                       ) : (

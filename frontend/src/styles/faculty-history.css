@@ -39,10 +39,10 @@
    rendered by the four admin screens. The markup was renamed onto .fh-*
    rather than those rules being restyled underneath admin, exactly as
    /faculty/attendance and /student/attendance were. No rule in
-   scaffolding.css was changed or removed, so it does not shrink here;
-   it shrinks when the admin group lands. ConfirmDialog still renders
-   .dialog and .danger from there and is deliberately untouched -- it is
-   shared with four admin screens.
+   scaffolding.css was changed or removed, so it did not shrink here;
+   it shrank when the admin group landed, and is gone. ConfirmDialog
+   was deliberately untouched by this pass -- it is shared with four
+   admin screens -- and now has its own styles/confirm-dialog.css.
 
    .card, .btn, .callout, .pill and .form-field come from components.css
    and are composed, never restyled: every override below is on one of

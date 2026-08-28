@@ -22,14 +22,15 @@
    Loaded before both page files, so either can override a rule here
    with a plain later selector rather than a more specific one.
 
-   Two specificity notes that are load-bearing rather than incidental,
-   both because history still renders scaffolding's .hierarchy-items:
-
-     .fa-row--inactive .fa-row-name  (0,2,0) beats .hierarchy-items
-       li.is-inactive .user-name, which the row no longer matches.
-     .fa-toggle.fa-toggle--present   (0,2,0) beats .hierarchy-level
-       button (0,1,1), so the present/absent fill reaches history now
-       rather than after that page is redesigned.
+   Two rules here are written at (0,2,0) -- .fa-row--inactive
+   .fa-row-name and .fa-toggle.fa-toggle--*. That was load-bearing when
+   it was written: the history page still rendered scaffolding's
+   .hierarchy-items and .hierarchy-level button, and the extra
+   specificity was what let the row's own colour and the present/absent
+   fill win inside them. Scaffolding is gone and nothing competes with
+   either rule now, so the specificity is merely harmless rather than
+   necessary. Left as it is: both selectors read as what they mean, and
+   loosening them would be a change to shipped pages for no gain.
 
    Moved here out of faculty-attendance.css when the history page began;
    the rules are unchanged, and the emitted stylesheet was compared
@@ -55,9 +56,9 @@
   overflow-wrap: anywhere;
 }
 
-/* (0,2,0), so it wins wherever the row renders -- including inside
-   scaffolding's .hierarchy-items on the history screen, which no longer
-   matches its own .is-inactive rule. */
+/* (0,2,0), which was what made it win inside scaffolding's
+   .hierarchy-items on the history screen. Nothing competes with it
+   now -- see the specificity note at the top of this file. */
 .fa-row--inactive .fa-row-name {
   color: var(--text);
   text-decoration: line-through;
@@ -124,11 +125,11 @@
    survives without colour. The label spells out the state and the act
    ("Present — mark absent"), which is what the fill agrees with.
 
-   .fa-toggle--* is written at (0,2,0) deliberately: it is the one thing
-   in this file that should also win inside scaffolding's
-   `.hierarchy-level button` on the history screen, where flipping a
-   wrongly-marked student is that screen's entire job. Chrome there stays
-   scaffolding's until history is redesigned. */
+   .fa-toggle--* is written at (0,2,0). That was deliberate when
+   history still rendered scaffolding's `.hierarchy-level button` and
+   this fill had to win inside it; that page owns its own chrome now
+   (.fh-*) and scaffolding is gone, so nothing competes. See the note at
+   the top of this file. */
 
 .fa-toggle {
   white-space: nowrap;

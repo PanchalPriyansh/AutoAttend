@@ -187,7 +187,7 @@ function ClassAssignment({ classItem, onClassChanged }) {
               <span className="ah-person-name">{enrollment.student.name}</span>
               <span className="ah-person-meta">
                 <span className="ah-person-email">{enrollment.student.email}</span>
-                {!enrollment.student.is_active && <span className="ah-flag">Deactivated</span>}
+                {!enrollment.student.is_active && <span className="pill pill--neutral ah-flag">Deactivated</span>}
               </span>
             </span>
             <button
@@ -238,7 +238,7 @@ function ClassAssignment({ classItem, onClassChanged }) {
               <span className="ah-person-name">{student.name}</span>
               <span className="ah-person-meta">
                 <span className="ah-person-email">{student.email}</span>
-                {!student.is_active && <span className="ah-flag">Deactivated</span>}
+                {!student.is_active && <span className="pill pill--neutral ah-flag">Deactivated</span>}
               </span>
             </span>
             <button

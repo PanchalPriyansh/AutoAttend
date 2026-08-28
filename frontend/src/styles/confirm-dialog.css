@@ -1,0 +1,111 @@
+/* --- The confirmation dialog (ConfirmDialog) -------------------------
+
+   One component, rendered by six files: both faculty attendance pages
+   (deleting a recorded session), /admin/academics through both
+   HierarchyLevel and ClassAssignment (deleting a level, unenrolling a
+   student), /admin/users (deactivating an account) and
+   /admin/face-enrollment (deleting a face sample).
+
+   It has its own file for the same reason .fa-row does -- it is neither
+   a page nor a primitive. Not a page: it is the last thing standing
+   between an admin and an irreversible delete on five different
+   screens, so styling it from any one page's file would be a
+   dependency nothing declares. Not a primitive either: components.css
+   holds patterns with two INDEPENDENT implementations, and this is one
+   component used six times. There is no second dialog to extract
+   against, which is exactly why the vocabulary has never had a .modal.
+
+   These rules were the last of scaffolding.css. That file is gone now,
+   and this is where its final thirty-nine lines went -- unchanged in
+   shape, with three things put right on the way:
+
+     The buttons compose .btn and .btn--danger. They were the last
+       hand-rolled control chrome in the project (0.85rem, 6px 12px, a
+       6px radius, and `.danger` recolouring the text and nothing else),
+       which meant the confirm button on a destructive dialog was grey
+       with one red word in it -- the same defect /admin/users and
+       /admin/face-enrollment had just fixed on the rows behind it.
+
+     The radius is --radius-md. It was a hard 12px, written before the
+       radii were tokenised, and 12px is what --radius-md already is.
+
+     overscroll-behavior: contain on the backdrop, so a scroll gesture
+       that reaches the end of the dialog does not chain through to the
+       page behind it.
+
+   Loaded after components.css so a plain selector here beats the
+   primitive, and before the page files so any page could still
+   override it -- none needs to.
+
+   NOT fixed here, deliberately: the dialog says aria-modal="true" but
+   does not trap focus, so a Tab past the confirm button leaves it for
+   the page behind. That is a behaviour change on six screens, not a
+   style one, and it belongs with the polish pass's other accessibility
+   work rather than inside the redesign. Reported, not silently
+   changed. */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overscroll-behavior: contain;
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.dialog h2 {
+  margin-top: 0;
+  color: var(--text-h);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+/* The message. It carries the consequence in words -- what is about to
+   happen and whether it can be undone -- so it reads at body size
+   rather than as a caption under the title. */
+.dialog p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* Cancel first in the DOM and focused on open, so the safe choice is
+   where a keyboard lands; the destructive one sits at the right where
+   the eye finishes. Both come from .btn -- only the arrangement is
+   here. */
+.dialog-actions .btn {
+  flex: none;
+}
+
+/* At the narrowest widths the two buttons stop sharing a line. Ordered
+   so the destructive action is not the one under the reading position
+   after the message. */
+@media (max-width: 360px) {
+  .dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .dialog-actions .btn {
+    width: 100%;
+  }
+}
