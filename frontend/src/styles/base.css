@@ -57,10 +57,12 @@ h1 {
    fourth.
 
    Two existing rules deliberately override this and still do, both by
-   specificity as well as by load order: .student-home-link, which moves
+   specificity as well as by load order: .portal-card-link, which moves
    its ring to the stretched ::after so it outlines the whole card, and
    .page, which is focused programmatically by the skip link and should
-   not show a ring for it. */
+   not show a ring for it. (That override was .student-home-link when
+   this was written, and was one of three identical copies; the three
+   landing pages now share one PortalCard.) */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

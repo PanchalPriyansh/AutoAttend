@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
+import PortalCard from '../components/layout/PortalCard'
 import { navigationFor } from '../navigation'
 
 function FacultyDashboard() {
@@ -7,12 +7,12 @@ function FacultyDashboard() {
     <AppShell title="Faculty Dashboard">
       <ul className="faculty-home">
         {navigationFor('faculty').map((item) => (
-          <li className="faculty-home-card card" key={item.to}>
-            <Link className="faculty-home-link" to={item.to}>
-              {item.label}
-            </Link>
-            <p className="faculty-home-desc">{item.description}</p>
-          </li>
+          <PortalCard
+            key={item.to}
+            to={item.to}
+            label={item.label}
+            description={item.description}
+          />
         ))}
       </ul>
     </AppShell>
