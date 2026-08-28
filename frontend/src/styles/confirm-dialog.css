@@ -37,12 +37,14 @@
    primitive, and before the page files so any page could still
    override it -- none needs to.
 
-   NOT fixed here, deliberately: the dialog says aria-modal="true" but
-   does not trap focus, so a Tab past the confirm button leaves it for
-   the page behind. That is a behaviour change on six screens, not a
-   style one, and it belongs with the polish pass's other accessibility
-   work rather than inside the redesign. Reported, not silently
-   changed. */
+   The focus trap this note used to ask for now exists, and it is in
+   ConfirmDialog.jsx rather than here: Tab cycles between the two
+   buttons and cannot reach the page behind the backdrop, and focus
+   returns to whatever opened the dialog -- or to <main>, in the four
+   callers where confirming deletes the row the trigger sat in. It was
+   deferred out of the redesign because it is behaviour across six
+   screens and not style, which is also why none of it landed in this
+   file. The stylesheet's half of the bargain is the ordering below. */
 
 .dialog-backdrop {
   position: fixed;
@@ -89,10 +91,23 @@
   margin-top: 20px;
 }
 
+/* The dialog itself is focusable (tabIndex -1) so the focus trap has
+   somewhere to hold focus while a request is in flight and both buttons
+   are disabled -- there is no focusable child to keep it on. It is never
+   tabbed to, only focused programmatically, so a ring here would outline
+   the whole dialog for the length of every delete and never otherwise.
+   Exactly the case .page:focus in shell.css already covers for the skip
+   link's target, and written the same way. The buttons are unaffected:
+   this matches the container, not .dialog .btn. */
+.dialog:focus {
+  outline: none;
+}
+
 /* Cancel first in the DOM and focused on open, so the safe choice is
    where a keyboard lands; the destructive one sits at the right where
    the eye finishes. Both come from .btn -- only the arrangement is
-   here. */
+   here. This order is now load-bearing in two files: it is also the
+   ring the component's focus trap tabs around. */
 .dialog-actions .btn {
   flex: none;
 }
