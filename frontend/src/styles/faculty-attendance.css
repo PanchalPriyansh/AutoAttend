@@ -66,7 +66,7 @@
      fields inside it follow. Nothing changes above 413px, where the
      track already had room for its 382px floor. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: var(--space-20);
   /* Narrower than .page's 1100. A row puts the student's name at the
      left edge and their toggle at the right, and past about 820 those
      two stop reading as one row -- which matters more here than on any
@@ -100,10 +100,10 @@
 .fa-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: var(--space-4) var(--space-12);
   align-items: baseline;
   justify-content: space-between;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
 }
 
 .fa-eyebrow {
@@ -148,7 +148,7 @@
 .fa-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
   margin: 0;
 }
@@ -174,7 +174,7 @@
 /* The selected class's place in the hierarchy -- context, not content,
    so it recedes below the controls it describes. */
 .fa-context {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   color: var(--text-muted);
   font-size: 0.8rem;
 }
@@ -186,8 +186,8 @@
    half-drawn screen rather than as an answer. The dashed box says the
    list is empty on purpose. */
 .fa-empty {
-  margin: 12px 0 0;
-  padding: 16px;
+  margin: var(--space-12) 0 0;
+  padding: var(--space-16);
   color: var(--text);
   font-size: 0.85rem;
   text-align: center;
@@ -230,7 +230,7 @@
 /* --- Capture --------------------------------------------------------- */
 
 .fa-capture .fa-alert {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 /* A file input is the one control components.css cannot fully dress,
@@ -276,7 +276,7 @@
 }
 
 .fa-live {
-  margin-top: 12px;
+  margin-top: var(--space-12);
 }
 
 /* Constrains the live preview. Without a width the <video> renders at
@@ -298,7 +298,7 @@
   box-sizing: border-box;
   width: 100%;
   max-width: 360px;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -311,14 +311,14 @@
    nothing to do and the row is centred instead. */
 .fa-live-actions {
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 /* The state that explains why every control on the panel just went
    dim. A bordered strip rather than a grey caption, because it is a
    state and not a footnote. */
 .fa-busy {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 10px 12px;
   color: var(--text-h);
   font-size: 0.85rem;
@@ -328,7 +328,7 @@
 }
 
 .fa-note {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   max-width: 68ch;
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -338,14 +338,14 @@
 /* --- Review summary -------------------------------------------------- */
 
 .fa-summary {
-  margin: 8px 0 0;
+  margin: var(--space-8) 0 0;
   color: var(--text-muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
 .fa-review .fa-alert {
-  margin-top: 12px;
+  margin-top: var(--space-12);
 }
 
 /* --- The four categories ---------------------------------------------
@@ -365,7 +365,7 @@
 }
 
 .fa-cat .fa-head {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
 }
 
 .fa-cat-note {
@@ -378,7 +378,7 @@
 
 .fa-roster {
   margin: 0;
-  padding: 0 0 0 8px;
+  padding: 0 0 0 var(--space-8);
   list-style: none;
   border-left: 3px solid var(--border);
 }
@@ -414,9 +414,9 @@
 .fa-roster .fa-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 16px;
+  gap: var(--space-4) var(--space-16);
   align-items: center;
-  padding: 8px;
+  padding: var(--space-8);
   border-bottom: 1px solid var(--border);
 }
 
@@ -438,10 +438,10 @@
 .fa-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
   margin: 0;
-  padding-top: 16px;
+  padding-top: var(--space-16);
   border-top: 1px solid var(--border);
 }
 
@@ -539,7 +539,7 @@
     /* 8 rather than the 4 the two-column row uses: stacked, this gap is
        between the identity and its control, not between two lines of
        the same block. */
-    gap: 8px;
+    gap: var(--space-8);
   }
 
   /* Its natural width, not the full row. A column of hollow and solid

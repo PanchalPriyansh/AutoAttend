@@ -63,12 +63,12 @@
      the 360px target, but it costs one function to be correct instead of
      coincidental. */
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-  gap: 16px;
+  gap: var(--space-16);
   /* Without a cap the pair would stretch to the .page 1100px and set
      each description across ~500px, which is past a comfortable measure
      for a sentence nobody re-reads. */
   max-width: 860px;
-  margin: 8px 0 0;
+  margin: var(--space-8) 0 0;
   padding: 0;
   list-style: none;
 }

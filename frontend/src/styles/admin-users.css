@@ -134,14 +134,14 @@
    pages sit next to each other in the admin nav and an admin moves
    between them constantly. */
 .au-panel {
-  padding: 20px 0 0;
+  padding: var(--space-20) 0 0;
   border-top: 1px solid var(--border);
 }
 
 .au-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--space-8) var(--space-12);
   align-items: center;
   justify-content: space-between;
 }
@@ -178,9 +178,9 @@
 .au-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
 }
 
 .au-field {
@@ -244,9 +244,9 @@
 .au-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
-  padding: 12px;
+  padding: var(--space-12);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -256,7 +256,7 @@
    the same "this is what you just opened" mark the selected row on
    /admin/academics and the open lecture on faculty history carry. */
 .au-form--create {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   background: var(--surface);
   border-left: 3px solid var(--accent);
 }
@@ -274,7 +274,7 @@
 /* --- Messages and states --------------------------------------------- */
 
 .au-alert {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   line-height: 1.45;
 }
 
@@ -290,7 +290,7 @@
    rather than a grey caption, because it is a state and not a
    footnote. */
 .au-loading {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 10px 12px;
   color: var(--text-h);
   font-size: 0.85rem;
@@ -303,8 +303,8 @@
    directory is a normal answer rather than a failure to load. The
    border is what distinguishes it from an unfinished screen. */
 .au-empty {
-  margin: 12px 0 0;
-  padding: 12px;
+  margin: var(--space-12) 0 0;
+  padding: var(--space-12);
   color: var(--text);
   font-size: 0.85rem;
   text-align: center;
@@ -321,7 +321,7 @@
    forty-account list for nothing. */
 
 .au-items {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--border);
@@ -344,7 +344,7 @@
 .au-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
   padding: 8px 8px 8px 5px;
   border-left: 3px solid transparent;
@@ -392,7 +392,7 @@
   display: flex;
   flex: 1 1 240px;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -417,7 +417,7 @@
 .au-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-4) var(--space-8);
   align-items: center;
 }
 
@@ -530,10 +530,10 @@
   display: flex;
   flex: 1 1 100%;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
-  margin: 4px 0 0;
-  padding: 12px;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-12);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

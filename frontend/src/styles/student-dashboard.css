@@ -25,9 +25,9 @@
 
 .student-home {
   display: grid;
-  gap: 16px;
+  gap: var(--space-16);
   max-width: 600px;
-  margin: 8px 0 0;
+  margin: var(--space-8) 0 0;
   padding: 0;
   list-style: none;
 }

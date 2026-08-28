@@ -107,7 +107,7 @@
    the same call faculty capture makes about its three rosters. */
 
 .ah-level {
-  padding: 20px 0;
+  padding: var(--space-20) 0;
   border-top: 1px solid var(--border);
 }
 
@@ -117,13 +117,13 @@
    of a laptop screen spent on levels the admin cannot use, pushing the
    one they can off the fold. */
 .ah-level--locked {
-  padding: 12px 0;
+  padding: var(--space-12) 0;
 }
 
 .ah-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--space-8) var(--space-12);
   align-items: center;
   justify-content: space-between;
 }
@@ -154,7 +154,7 @@
 /* Dashed, like the empty state, because it is the same kind of fact
    said differently: there is nothing here, and here is why. */
 .ah-locked {
-  margin: 8px 0 0;
+  margin: var(--space-8) 0 0;
   padding: 10px 12px;
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -171,10 +171,10 @@
 .ah-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
-  margin: 12px 0 0;
-  padding: 12px;
+  margin: var(--space-12) 0 0;
+  padding: var(--space-12);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -215,7 +215,7 @@
 /* --- Messages and states --------------------------------------------- */
 
 .ah-alert {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   line-height: 1.45;
 }
 
@@ -223,7 +223,7 @@
    rather than a grey caption, because it is a state and not a
    footnote. */
 .ah-loading {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 10px 12px;
   color: var(--text-h);
   font-size: 0.85rem;
@@ -236,8 +236,8 @@
    screen is a normal answer rather than a failure to load. The border
    is what distinguishes it from an unfinished screen. */
 .ah-empty {
-  margin: 12px 0 0;
-  padding: 12px;
+  margin: var(--space-12) 0 0;
+  padding: var(--space-12);
   color: var(--text);
   font-size: 0.85rem;
   text-align: center;
@@ -255,7 +255,7 @@
    twenty-five-item course list for nothing. */
 
 .ah-items {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--border);
@@ -277,7 +277,7 @@
 .ah-item {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
   padding: 6px 8px 6px 5px;
   border-left: 3px solid transparent;
@@ -305,7 +305,7 @@
 .ah-pick {
   flex: 1 1 200px;
   min-width: 0;
-  padding: 4px 0;
+  padding: var(--space-4) 0;
   font: inherit;
   font-size: 1rem;
   font-weight: 500;
@@ -376,10 +376,10 @@
 .ah-class-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: var(--space-4) var(--space-12);
   align-items: baseline;
   justify-content: space-between;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
 }
 
 /* A title at a readable size, not the small-caps eyebrow the levels
@@ -401,7 +401,7 @@
 .ah-assign {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--space-8) var(--space-16);
   align-items: flex-end;
   margin: 0;
 }
@@ -429,7 +429,7 @@
    between levels, because these are sections of the card rather than
    lines in it. */
 .ah-subtitle {
-  margin: 20px 0 0;
+  margin: var(--space-20) 0 0;
   color: var(--text-h);
   font-size: 1rem;
   font-weight: 500;
@@ -444,7 +444,7 @@
    to build it. */
 
 .ah-roster {
-  margin: 8px 0 0;
+  margin: var(--space-8) 0 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--border);
@@ -453,9 +453,9 @@
 .ah-person {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 16px;
+  gap: var(--space-4) var(--space-16);
   align-items: center;
-  padding: 8px;
+  padding: var(--space-8);
   border-bottom: 1px solid var(--border);
 }
 
@@ -477,7 +477,7 @@
 .ah-person-identity {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -500,7 +500,7 @@
 .ah-person-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-4) var(--space-8);
   align-items: center;
 }
 
@@ -529,9 +529,9 @@
 .ah-search {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--space-8) var(--space-16);
   align-items: flex-end;
-  margin: 20px 0 0;
+  margin: var(--space-20) 0 0;
 }
 
 /* The results of the search, in their own well.
@@ -546,7 +546,7 @@
    Overrides .ah-roster's border-top and padding; both are (0,1,0) and
    this is later in the file. */
 .ah-results {
-  padding: 0 12px;
+  padding: 0 var(--space-12);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -723,6 +723,6 @@
    chevron tuned against its padding-top. */
 @media (max-width: 480px) {
   .ah-class {
-    padding: 16px;
+    padding: var(--space-16);
   }
 }

@@ -12,7 +12,7 @@ body {
   max-width: 100%;
   min-height: 100svh;
   box-sizing: border-box;
-  padding: 32px;
+  padding: var(--space-32);
 }
 
 /* The outer gutter is the single largest constraint on every narrow
@@ -40,8 +40,10 @@ body {
    :has(.auth-screen) rule in login.css) and declares its own gutters. */
 @media (max-width: 480px) {
   #root {
-    padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-      max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    padding: max(var(--space-24), env(safe-area-inset-top))
+      max(var(--space-16), env(safe-area-inset-right))
+      max(var(--space-24), env(safe-area-inset-bottom))
+      max(var(--space-16), env(safe-area-inset-left));
   }
 }
 
