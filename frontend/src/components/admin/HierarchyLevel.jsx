@@ -102,7 +102,9 @@ function HierarchyLevel({
         <label htmlFor={`${idPrefix}-${field.name}`}>{field.label}</label>
         <input
           id={`${idPrefix}-${field.name}`}
+          name={field.name}
           type={field.type === 'date' ? 'date' : 'text'}
+          autoComplete="off"
           value={values[field.name] ?? ''}
           onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
           required

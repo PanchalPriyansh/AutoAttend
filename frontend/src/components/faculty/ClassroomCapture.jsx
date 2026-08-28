@@ -82,7 +82,7 @@ function ClassroomCapture({ onCapture, disabled }) {
 
       {active && (
         <div className="fa-live">
-          <video ref={videoRef} autoPlay playsInline muted />
+          <video ref={videoRef} autoPlay playsInline muted aria-label="Live camera preview" />
           <div className="fa-form fa-live-actions">
             <button type="button" className="btn btn--primary fa-btn" onClick={takePhoto} disabled={disabled}>
               Take photo

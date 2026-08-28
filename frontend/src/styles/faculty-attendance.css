@@ -36,11 +36,12 @@
    this page's own selectors.
 
    .fa-row* is deliberately shared: StudentStatusRow renders on the
-   history screen too, which is still on scaffolding. Box layout for a
-   row is therefore scoped under .fa-roster (this page's <ul>), so it
-   cannot fight `.hierarchy-items li` over there; typography and the
-   present/absent fill are left unscoped, because both are improvements
-   history should have now rather than after its own redesign.
+   history screen too. Box layout for a row is therefore scoped under
+   .fa-roster (this page's <ul>) rather than written bare, which was
+   what stopped it fighting scaffolding's `.hierarchy-items li` before
+   history was redesigned; the scoping is still right, because the two
+   pages arrange their lists differently. Typography and the
+   present/absent fill are left unscoped, so both pages share them.
 
    Vertical rhythm: 20 between sections, 12 inside a panel, 8 and below
    within a group. Rows are tight (a 4px-gapped 8px-padded line) because
@@ -280,10 +281,21 @@
 
 /* Constrains the live preview. Without a width the <video> renders at
    the camera's native resolution and pushes the capture button off
-   screen. (The admin face-enrolment screen has its own copy of this in
-   scaffolding.css, under .face-capture-live, and keeps it.) */
+   screen. (The admin face-enrolment screen had its own copy of this in
+   scaffolding.css, under .face-capture-live. That screen has since been
+   designed and now frames its preview in .fe-live video, capped at 320
+   rather than 360 -- one face rather than a whole room.) */
+/* box-sizing for the same reason its admin twin carries it: this
+   project has no universal reset, so `width: 100%` sizes the content
+   box and the 1px frame is added outside it, putting the preview 2px
+   over the column below the 360 cap. Fixed here rather than left for
+   the polish pass because the declaration and the defect are both
+   identical to .fe-live video, and fixing one twin knowingly is worse
+   than fixing neither. The cap now measures the frame, so the preview
+   is 360px wide rather than 362 wherever it binds. */
 .fa-live video {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   max-width: 360px;
   margin: 0 0 12px;
@@ -391,11 +403,13 @@
 /* --- A student row ----------------------------------------------------
 
    Rendered by StudentStatusRow, which the history screen also uses. The
-   box below is scoped to this page's <ul> on purpose: over there the
-   <ul> is still scaffolding's .hierarchy-items, whose `li` rule would
-   win on specificity and load order, and a half-applied box is worse
-   than none. Everything outside this scope is typography and state,
-   which history gains cleanly. */
+   box below is scoped to this page's <ul> on purpose: when this was
+   written the history <ul> was still scaffolding's .hierarchy-items,
+   whose `li` rule would have won on specificity and load order. That
+   page owns .fh-roster now, and the scoping is still correct for a
+   different reason -- how a page arranges a list of rows is the page's,
+   not the row's. Everything outside this scope is typography and
+   state, which both pages share. */
 
 .fa-roster .fa-row {
   display: grid;
@@ -514,12 +528,11 @@
 
    Scoped to .fa-roster on purpose, exactly as the row's box layout
    further up this file is. StudentStatusRow also renders on
-   /faculty/attendance/history, inside scaffolding's .hierarchy-items,
-   which is a wrapping flex row: grid-template-columns would apply to
-   nothing there, and a bare .fa-toggle rule would be a change to a page
-   nobody has designed yet. History already drops its own button onto a
-   second line once .fa-row-identity cannot get its 200px basis, and is
-   unaffected by any of this. */
+   /faculty/attendance/history, which lays its own rows out in
+   .fh-roster: grid-template-columns would apply to nothing there, and a
+   bare .fa-toggle rule would reach a page this one does not own.
+   History drops its own button onto a second line once .fa-row-identity
+   cannot get its 200px basis, and is unaffected by any of this. */
 @media (max-width: 450px) {
   .fa-roster .fa-row {
     grid-template-columns: minmax(0, 1fr);

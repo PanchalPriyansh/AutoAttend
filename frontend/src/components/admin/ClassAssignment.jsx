@@ -150,6 +150,7 @@ function ClassAssignment({ classItem, onClassChanged }) {
           <label htmlFor="assign-faculty">Assigned faculty</label>
           <select
             id="assign-faculty"
+            name="faculty_id"
             value={classItem.faculty_id ?? ''}
             onChange={handleAssign}
             disabled={pending}
@@ -209,10 +210,13 @@ function ClassAssignment({ classItem, onClassChanged }) {
           <label htmlFor="enroll-search">Add a student</label>
           <input
             id="enroll-search"
+            name="q"
             type="search"
             value={studentQuery}
             onChange={(event) => setStudentQuery(event.target.value)}
-            placeholder="Search by name or email"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Search by name or email…"
           />
         </span>
         <button type="submit" className="btn btn--secondary ah-submit" disabled={pending}>
