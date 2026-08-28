@@ -1,171 +1,41 @@
 /* Styling written while the features were being built -- temporary.
 
-   These class names do not partition by page: .hierarchy-* is used by
-   eleven files across admin and faculty, .user-* by five of them. They
-   were never a shared vocabulary; pages simply borrowed whatever
-   already existed. That is why this is one file rather than several,
-   and why splitting it by page would mean duplicating rules.
+   This file is nearly gone. It was 396 lines when the redesign began,
+   210 after group 4a, and what is left below is one component:
+   ConfirmDialog.
 
-   A redesigned page stops borrowing them rather than restyling them:
-   /student/attendance was renamed onto its own .sa-* hooks so that
-   changing its layout could not reach the admin and faculty screens
-   still reading the rules below.
+   The class names here never partitioned by page -- .hierarchy-* alone
+   reached eleven files across admin and faculty, .user-* five of them.
+   They were not a shared vocabulary; pages simply borrowed whatever
+   already existed, which is why this was one file rather than several,
+   and why splitting it by page would have meant duplicating rules.
 
-   Each /frontend-maker group carves its pages out of here into a file
-   of its own. This file should only ever shrink. */
+   A redesigned page stopped borrowing them rather than restyling them,
+   so that changing one page's layout could not reach a screen nobody
+   had looked at yet. That left the rules alive but unrendered until the
+   last borrower moved, at which point they were deleted outright:
 
-/* --- Academic hierarchy admin screen ------------------------------- */
+     .hierarchy-select / .is-selected  gone in 4a -- HierarchyLevel.jsx
+       was their only renderer and /admin/academics moved onto .ah-pick
+       and .ah-item--selected.
 
-.hierarchy-level {
-  border-top: 1px solid var(--border);
-  padding: 16px 0;
-}
+     .hierarchy-level (+ its button rules), .hierarchy-header (+ h2),
+     .hierarchy-hint, .hierarchy-error, .hierarchy-form (+ .field,
+     label, input, select), .field, .hierarchy-items (+ li, li
+     .is-inactive, li.is-inactive .user-name), .hierarchy-subheading,
+     .user-identity, .user-name, .is-inactive, .face-capture-live video
+       gone in 4b -- /admin/face-enrollment was the last renderer of
+       every one of them and moved onto .fe-* in
+       styles/admin-face-enrollment.css.
 
-.hierarchy-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
+   What remains is ConfirmDialog, which is rendered by six files across
+   admin and faculty (both faculty attendance pages, /admin/academics,
+   /admin/users, /admin/face-enrollment and ClassAssignment) and has not
+   been designed. `.dialog button` and `.dialog button.danger` below
+   used to be selector lists shared with `.hierarchy-level button`; only
+   the hierarchy half was removed. */
 
-.hierarchy-header h2 {
-  margin: 0;
-  color: var(--text-h);
-  font-size: 1rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.hierarchy-hint {
-  color: var(--text);
-  font-size: 0.85rem;
-}
-
-.hierarchy-error {
-  color: var(--danger);
-  font-size: 0.85rem;
-}
-
-.hierarchy-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
-  padding: 12px;
-  margin: 12px 0;
-  background: var(--surface);
-  border-radius: 8px;
-}
-
-.hierarchy-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1 1 160px;
-}
-
-.hierarchy-form label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.hierarchy-form input,
-.hierarchy-form select {
-  font: inherit;
-  font-size: 0.9rem;
-  padding: 6px 8px;
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  min-width: 0;
-}
-
-.hierarchy-items {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.hierarchy-items li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-}
-
-/* .hierarchy-select and .is-selected used to live here -- the selectable
-   label in a hierarchy row and the mark on the selected one. Both were
-   rendered by HierarchyLevel.jsx and by nothing else in the project, so
-   /admin/academics moving onto .ah-pick / .ah-item--selected left all
-   three rules with no renderer. Deleted rather than kept alive. */
-
-.hierarchy-level button,
-.dialog button {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 6px 12px;
-  color: var(--text-h);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.hierarchy-level button:disabled,
-.dialog button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.hierarchy-level button.danger,
-.dialog button.danger {
-  color: var(--danger);
-}
-
-/* --- User management admin screen --- */
-
-.hierarchy-subheading {
-  margin: 16px 0 0;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-/* A person's row needs two lines (name, then email/role), unlike a
-   hierarchy row which is a single label. */
-.user-identity {
-  display: flex;
-  flex: 1 1 200px;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.user-name {
-  color: var(--text-h);
-}
-
-/* Deactivated accounts stay visible and are marked, rather than being
-   filtered out of the list -- an admin needs to see them to reactivate. */
-.hierarchy-items li.is-inactive {
-  border-style: dashed;
-  border-color: var(--border);
-}
-
-.hierarchy-items li.is-inactive .user-name {
-  color: var(--text);
-  text-decoration: line-through;
-}
+/* --- ConfirmDialog --------------------------------------------------- */
 
 .dialog-backdrop {
   position: fixed;
@@ -199,12 +69,22 @@
   justify-content: flex-end;
 }
 
-/* Constrains the live camera preview only. Without a width the <video>
-   renders at the camera's native resolution and pushes the capture button
-   off screen. */
-.face-capture-live video {
-  display: block;
-  width: 100%;
-  max-width: 320px;
-  margin: 12px 0;
+.dialog button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialog button.danger {
+  color: var(--danger);
 }

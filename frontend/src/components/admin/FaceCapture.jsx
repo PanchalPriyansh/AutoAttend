@@ -14,6 +14,10 @@ import useCamera from '../../hooks/useCamera'
  * enrolling from a saved photo should not be blocked by a webcam they were
  * never going to use. The stream lifecycle itself lives in useCamera, shared
  * with the classroom capture control.
+ *
+ * Styled by styles/admin-face-enrollment.css. It used to render .face-capture,
+ * .face-capture-live and .hierarchy-* from scaffolding.css; those are gone now
+ * that this page -- their last renderer -- has its own hooks.
  */
 function FaceCapture({ onCapture, disabled }) {
   const { videoRef, active, error, start, stop, capturePhoto } = useCamera()
@@ -31,24 +35,28 @@ function FaceCapture({ onCapture, disabled }) {
   }
 
   return (
-    <div className="face-capture">
+    <div className="fe-capture">
       {error && (
-        <p role="alert" className="hierarchy-error">
+        <p role="alert" className="callout callout--error fe-alert">
+          <span className="callout-mark" aria-hidden="true">
+            !
+          </span>
           {error}
         </p>
       )}
 
-      <p className="hierarchy-hint">
+      <p className="fe-guide">
         Face the camera directly, head and shoulders in frame, in even front-facing
         light. Avoid sunglasses, glare on glasses, and a busy or reflective background.
         The photo is not stored — only the numeric encoding derived from it.
       </p>
 
-      <div className="hierarchy-form">
-        <span className="field">
+      <div className="fe-capture-form">
+        <span className="form-field fe-field fe-file">
           <label htmlFor="face-image">Upload a photo</label>
           <input
             id="face-image"
+            name="face_image"
             type="file"
             accept="image/jpeg,image/png,image/webp"
             onChange={handleFile}
@@ -57,20 +65,30 @@ function FaceCapture({ onCapture, disabled }) {
         </span>
 
         {!active && (
-          <button type="button" onClick={start} disabled={disabled}>
+          <button
+            type="button"
+            className="btn btn--secondary fe-btn"
+            onClick={start}
+            disabled={disabled}
+          >
             Use camera
           </button>
         )}
       </div>
 
       {active && (
-        <div className="face-capture-live">
-          <video ref={videoRef} autoPlay playsInline muted />
-          <div className="hierarchy-form">
-            <button type="button" onClick={takePhoto} disabled={disabled}>
+        <div className="fe-live">
+          <video ref={videoRef} autoPlay playsInline muted aria-label="Live camera preview" />
+          <div className="fe-live-actions">
+            <button
+              type="button"
+              className="btn btn--primary fe-btn"
+              onClick={takePhoto}
+              disabled={disabled}
+            >
               Take photo
             </button>
-            <button type="button" onClick={stop}>
+            <button type="button" className="btn btn--secondary fe-btn" onClick={stop}>
               Stop camera
             </button>
           </div>

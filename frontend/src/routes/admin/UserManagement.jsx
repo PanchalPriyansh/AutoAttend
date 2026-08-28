@@ -154,16 +154,19 @@ function UserManagement() {
 
   return (
     <AppShell title="Users">
-      <p className="hierarchy-hint">
+      <p className="au-intro">
         Accounts are created here — there is no public sign-up. Accounts are deactivated rather
         than deleted, so a user’s enrollment and attendance history stays intact.
       </p>
 
-      <section className="hierarchy-level" aria-labelledby="users-heading">
-        <header className="hierarchy-header">
-          <h2 id="users-heading">Directory</h2>
+      <section className="au-panel" aria-labelledby="users-heading">
+        <header className="au-head">
+          <h2 id="users-heading" className="au-eyebrow">
+            Directory
+          </h2>
           <button
             type="button"
+            className="btn btn--secondary au-add"
             onClick={() => {
               setEditingId(null)
               setResettingId(null)
@@ -175,11 +178,12 @@ function UserManagement() {
           </button>
         </header>
 
-        <form className="hierarchy-form" onSubmit={applySearch}>
-          <span className="field">
+        <form className="au-filters" onSubmit={applySearch}>
+          <span className="form-field au-field au-field--role">
             <label htmlFor="filter-role">Role</label>
             <select
               id="filter-role"
+              name="role"
               value={filters.role}
               onChange={(event) =>
                 setFilters((current) => ({ ...current, role: event.target.value }))
@@ -192,16 +196,19 @@ function UserManagement() {
               ))}
             </select>
           </span>
-          <span className="field">
+          <span className="form-field au-field au-field--search">
             <label htmlFor="filter-q">Search name or email</label>
             <input
               id="filter-q"
+              name="q"
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
             />
           </span>
-          <button type="submit" disabled={loading}>
+          <button type="submit" className="btn btn--secondary au-submit" disabled={loading}>
             Search
           </button>
         </form>
@@ -216,30 +223,50 @@ function UserManagement() {
         )}
 
         {error && (
-          <p role="alert" className="hierarchy-error">
+          <p role="alert" className="callout callout--error au-alert">
+            <span className="callout-mark" aria-hidden="true">
+              !
+            </span>
             {error}
           </p>
         )}
         {actionError && (
-          <p role="alert" className="hierarchy-error">
+          <p role="alert" className="callout callout--error au-alert">
+            <span className="callout-mark" aria-hidden="true">
+              !
+            </span>
             {actionError}
           </p>
         )}
-        {notice && <p className="hierarchy-hint">{notice}</p>}
+        {/* Always rendered, so the region exists before its content
+            changes -- a live region inserted at the same moment as its
+            text is announced unreliably. The two errors above stay
+            outside it: role="alert" already announces them, and more
+            assertively than this should. */}
+        <div aria-live="polite">
+          {notice && (
+            <p className="callout callout--success au-alert">
+              <span className="callout-mark" aria-hidden="true">
+                ✓
+              </span>
+              {notice}
+            </p>
+          )}
 
-        {loading && <p className="hierarchy-hint">Loading…</p>}
+          {loading && <p className="au-loading">Loading…</p>}
 
-        {!loading && !error && users.length === 0 && (
-          <p className="hierarchy-hint">No users match these filters.</p>
-        )}
+          {!loading && !error && users.length === 0 && (
+            <p className="au-empty">No users match these filters.</p>
+          )}
+        </div>
 
-        <ul className="hierarchy-items">
+        <ul className="au-items">
           {users.map((row) => {
             const isSelf = row.id === currentUser?.id
 
             if (editingId === row.id) {
               return (
-                <li key={row.id}>
+                <li key={row.id} className="au-editing">
                   <UserForm
                     mode="edit"
                     user={row}
@@ -251,26 +278,48 @@ function UserManagement() {
               )
             }
 
+            // Two data-driven marks, both read from state that already
+            // existed: a deactivated account, and the row whose password
+            // form is open. No new state, no changed handler.
+            const rowClass = [
+              'au-row',
+              row.is_active ? '' : 'au-row--inactive',
+              resettingId === row.id ? 'au-row--open' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
+
             return (
-              <li key={row.id} className={row.is_active ? undefined : 'is-inactive'}>
-                <span className="user-identity">
-                  <span className="user-name">{row.name}</span>
-                  <span className="hierarchy-hint">
-                    {row.email} · {row.role}
-                    {!row.is_active && ' · Deactivated'}
+              <li key={row.id} className={rowClass}>
+                <span className="au-identity">
+                  <span className="au-name">{row.name}</span>
+                  <span className="au-meta">
+                    <span className="au-email">{row.email}</span>
+                    <span className="au-role">{row.role}</span>
+                    {!row.is_active && <span className="au-flag">Deactivated</span>}
                   </span>
                 </span>
 
-                <button type="button" onClick={() => startEditing(row)} disabled={pending}>
+                <button
+                  type="button"
+                  className="btn btn--secondary au-action"
+                  onClick={() => startEditing(row)}
+                  disabled={pending}
+                >
                   Edit
                 </button>
-                <button type="button" onClick={() => startResetting(row)} disabled={pending}>
+                <button
+                  type="button"
+                  className="btn btn--secondary au-action"
+                  onClick={() => startResetting(row)}
+                  disabled={pending}
+                >
                   Reset password
                 </button>
                 {row.is_active ? (
                   <button
                     type="button"
-                    className="danger"
+                    className="btn btn--danger au-action"
                     onClick={() => {
                       setActionError('')
                       setNotice('')
@@ -286,6 +335,7 @@ function UserManagement() {
                 ) : (
                   <button
                     type="button"
+                    className="btn btn--secondary au-action"
                     onClick={() => handleToggleStatus(row, true)}
                     disabled={pending}
                   >
@@ -294,11 +344,12 @@ function UserManagement() {
                 )}
 
                 {resettingId === row.id && (
-                  <form className="hierarchy-form" onSubmit={handleResetPassword}>
-                    <span className="field">
+                  <form className="au-reset" onSubmit={handleResetPassword}>
+                    <span className="form-field au-field au-field--password">
                       <label htmlFor={`reset-${row.id}`}>New password</label>
                       <input
                         id={`reset-${row.id}`}
+                        name="new_password"
                         type="password"
                         value={newPassword}
                         onChange={(event) => setNewPassword(event.target.value)}
@@ -306,11 +357,12 @@ function UserManagement() {
                         required
                       />
                     </span>
-                    <button type="submit" disabled={pending}>
+                    <button type="submit" className="btn btn--primary au-submit" disabled={pending}>
                       {pending ? 'Saving…' : 'Set password'}
                     </button>
                     <button
                       type="button"
+                      className="btn btn--secondary au-submit"
                       onClick={() => {
                         setNewPassword('')
                         setResettingId(null)

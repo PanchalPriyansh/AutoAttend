@@ -37,4 +37,6 @@
 @import './styles/faculty-history.css';
 @import './styles/admin-portal.css';
 @import './styles/admin-academics.css';
+@import './styles/admin-users.css';
+@import './styles/admin-face-enrollment.css';
 @import './styles/scaffolding.css';

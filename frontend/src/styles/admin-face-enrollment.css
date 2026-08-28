@@ -1,0 +1,852 @@
+/* --- Face enrollment (/admin/face-enrollment) ------------------------
+
+   Where a student's face is registered so recognition can find them
+   later. Two files render it: FaceEnrollment.jsx and FaceCapture.jsx,
+   the second being the admin twin of the faculty screens'
+   ClassroomCapture -- same useCamera hook, same file-input-plus-webcam
+   shape, one face instead of a room.
+
+   Three stacked things: a picker that walks the hierarchy down to a
+   class, the roster of that class, and -- once a student is chosen --
+   a panel holding the capture control and that student's samples.
+
+   What was actually wrong, in the order it costs the admin time:
+
+     The sample count was the tail of a middot string. It is the only
+     number on the page and the entire reason the page exists: a
+     student with no samples cannot be recognised at all, so the whole
+     of "take attendance from a photo" fails silently for them. It was
+     rendering as the third item of "email . Deactivated . No face
+     samples", in the same muted grey as the address, under a name at
+     the inherited 18px. Finding the students who still need enrolling
+     meant reading every row to its end. A count is a small-caps tag
+     now, and *zero* is the exception rather than another value of the
+     same thing -- it takes .pill--warning from the vocabulary, which
+     states the condition in words and only then colours it.
+
+     Nine different things were the same grey caption. .hierarchy-hint
+     carried the page intro, "Loading...", the empty roster, the
+     shortfall summary, every row's metadata line, the capture
+     guidance, "No samples registered yet." and -- worst -- "Face
+     sample registered for Priya Sharma.", the confirmation that the
+     one action on the page had worked. They are separate things now:
+     an intro paragraph, a solid loading strip, a dashed empty box, a
+     warning-railed summary strip, a metadata line of three elements,
+     a muted instruction note, and .callout--success.
+
+     Errors were red sentences. Three channels can be on screen at
+     once -- the roster request, a register/delete failure, and the
+     camera's own permission error inside FaceCapture -- and all three
+     were bare runs of --danger text. All three are .callout--error
+     now, the same bordered box with the same `!` mark that
+     /admin/users and /admin/academics use.
+
+     Nothing said which student was open. The button label flipped
+     from "Manage faces" to "Managing" and that was the only mark, on
+     a list of thirty rows whose detail panel opens below the fold.
+     The row takes the accent rail and tint the rest of the project
+     uses for "this is the one you are working in", and the panel
+     carries the same rail so the two read as one object.
+
+     A locked select looked broken rather than locked. Four of the
+     five levels start disabled and the only signal was the browser's
+     default grey. The label recedes with the control now, and the
+     control takes --surface, so a level that is not reachable yet
+     reads as waiting rather than as failed.
+
+     The five selects sat in a padded --surface panel. That is the
+     shape a create form takes; this is a picker that saves nothing
+     and submits nothing, and the panel made it look like something to
+     fill in. It is a strip of controls on the page now -- the call
+     .ah-assign and .au-filters already make. The field chrome was
+     scaffolding's 6px corners and 0.75rem uppercase letterspaced
+     labels; the seven `field` spans across the two files are
+     `form-field` now, which is the vocabulary's primitive.
+
+     The rows were separated capsules. .hierarchy-items gave each <li>
+     a 6px gap and a transparent border, which gives the eye a new
+     starting point per row and roughly doubles the height of a
+     thirty-student roster. Hairline-separated rows with no gap, the
+     same as /admin/users, /admin/academics and faculty history.
+
+     The live camera preview was an unframed video with 12px above and
+     below it. Its faculty twin is a bordered, rounded well; this one
+     was a raw rectangle whose only rule was the width that stops it
+     rendering at the camera's native resolution.
+
+   Ownership. Everything these two files rendered came from
+   scaffolding.css: .hierarchy-level, .hierarchy-header,
+   .hierarchy-hint, .hierarchy-error, .hierarchy-form, .field,
+   .hierarchy-items, .hierarchy-subheading, .user-identity, .user-name,
+   .is-inactive, .face-capture-live and .danger. This page was the last
+   renderer of all of them except .danger, so unlike every group before
+   it, this pass DELETES rather than renames-and-leaves: thirteen rules
+   came out of scaffolding.css, leaving only ConfirmDialog.
+
+   ConfirmDialog was out of scope for this pass and left untouched. The
+   two selector lists it shared with this page (`.hierarchy-level
+   button, .dialog button`, and its :disabled and .danger companions)
+   had only the .hierarchy-level half removed. The teardown step that
+   followed moved the dialog onto styles/confirm-dialog.css and deleted
+   scaffolding.css outright. Nothing below uses a bare element
+   selector, so the dialog opened from this page is unaffected either
+   way.
+
+   .card is composed once, for the student panel, because that panel is
+   a different kind of object from the two bands above it -- the detail
+   of the row that was selected, not a third section of the page. Same
+   call /admin/academics makes for its class panel, down to the accent
+   rail. The two bands are hairline-separated rather than carded: three
+   stacked panels flatten a page into one texture.
+
+   .btn (+ --primary/--secondary/--danger), .callout (+ --error and
+   --success), .pill (+ --warning) and .form-field come from
+   components.css and are composed here, never restyled: every override
+   below is on one of this page's own hooks.
+
+   Vertical rhythm: 20 between the page's blocks, 12 inside one, 8 and
+   below within a group -- the same as the two admin pages beside it.
+   820px is their measure too, and for the same reason: a row puts a
+   name at the left edge and its action at the right, and past about
+   820 the two stop reading as one row.
+
+   No transition is declared here. The only animated thing on the page
+   is .btn's colour fade, already guarded for prefers-reduced-motion in
+   components.css. */
+
+/* Capped individually rather than through a wrapper: FaceEnrollment
+   renders the intro and its three blocks as direct children of the
+   shell's .page, and adding a <div> to hold them would be markup for a
+   margin. */
+.fe-intro,
+.fe-panel,
+.fe-student {
+  max-width: 820px;
+}
+
+.fe-intro {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* --- The two bands ---------------------------------------------------
+
+   Padded on both edges rather than only the top, unlike .au-panel next
+   door: that page has one band and this has two, so the second band's
+   hairline would otherwise land directly on the last select of the
+   first. Same shape .ah-level takes for the same reason. */
+
+.fe-panel {
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+
+.fe-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* A structural label, not a title: the <h1> above already says "Face
+   Enrollment", and these name the two steps rather than the things.
+   Same small-caps eyebrow the admin and faculty screens use. */
+.fe-eyebrow {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* --- The class picker ------------------------------------------------
+
+   Five dependent selects, and a strip of controls rather than a form
+   panel: nothing here is submitted, each change narrows the one below
+   it, and the padded --surface box it used to sit in is the shape this
+   project reserves for something you fill in. .form-field carries each
+   label and its control chrome; what is left is how five of them share
+   a line.
+
+   180/280 rather than the 200/320 the filter strips use: a wider basis
+   puts Course and Class on a line of their own with two thirds of it
+   empty.
+
+   What the measure actually produces, since an earlier draft of this
+   comment guessed and was wrong: at the full 820 it is 4 + 1, because
+   4 x 180 + 3 x 16 = 768 still fits, so Class lands alone with about
+   540px of empty line beside it. 3 + 2 starts at 636 and holds to 408;
+   from 407 every field is alone on its line, which is where the 280
+   cap is lifted below. Nothing overflows in any of those shapes -- the
+   4 + 1 is a ragged full-measure line, not a break. */
+
+.fe-picker,
+.fe-capture-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  margin: 12px 0 0;
+}
+
+/* 200 and not 180, measured against real data: the longest department
+   name in the database, "Computer Science and Engineering", needs
+   250.8px of text room. At 180 the picker fits FOUR on the 820 measure
+   (4 x 180 + 3 x 16 = 768), so each got 193px -- 171px of text room --
+   and the name was clipped at every width from 408 up. At 200 only
+   three fit (4 x 200 + 48 = 848 > 820), which is the 3 + 2 this file
+   always claimed to produce.
+
+   It does not fully fix the widest case, and that is arithmetic rather
+   than a choice: three selects each wide enough for this name need
+   3 x 273 + 32 = 851px, more than the 820 measure has. Three-per-line
+   tops out at 262.7px (241px of text), about 10px short on this one
+   name. Closing it means two-per-line at desktop -- 244px of the line
+   left empty -- or letting the picker outgrow the roster and card
+   below it. Neither is worth 10px on the longest name in the set, and
+   the full text is always there in the open dropdown. */
+.fe-field {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 280px;
+}
+
+/* Windows draws a native <select>'s popup from the control's own
+   colours, and an unset background there comes out white-on-white in
+   dark mode. .form-field sets them on the select; this states them on
+   the options, which is the part the OS draws. */
+.fe-field select option {
+  color: var(--text-h);
+  background: var(--bg);
+}
+
+/* Four of the five levels are disabled until their parent is chosen,
+   and on an untouched page that is four of five at once. The browser's
+   default grey says "broken" as readily as "not yet": --surface is the
+   fill this project uses for something inert, and it is the same
+   treatment /admin/users gives its read-only Role box. */
+.fe-field select:disabled {
+  color: var(--text-muted);
+  background: var(--surface);
+  cursor: default;
+}
+
+/* :hover still matches a disabled control, so .form-field's hover
+   border would light up a select that cannot be opened. (0,3,1) beats
+   that rule's (0,2,1). */
+.fe-field select:disabled:hover {
+  border-color: var(--border);
+}
+
+/* The label recedes with the control it belongs to. Never the only
+   signal -- the select is also visibly inert and carries `disabled`,
+   which is what a screen reader reads. */
+.fe-field:has(select:disabled) label {
+  color: var(--text-muted);
+}
+
+/* --- Messages and states --------------------------------------------- */
+
+.fe-alert {
+  margin: 12px 0 0;
+  line-height: 1.45;
+}
+
+/* Solid: the roster is not empty, it is on its way. A bordered strip
+   rather than a grey caption, because it is a state and not a
+   footnote. */
+.fe-loading {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Dashed: this class really has nobody in it, or this student really
+   has no samples yet -- a normal answer rather than a failure to load.
+   The border is what distinguishes it from an unfinished screen. */
+.fe-empty {
+  margin: 12px 0 0;
+  padding: 12px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* "7 of 30 students have no face samples yet." -- the page's headline
+   fact, and the reason an admin opened it. Same strip as .fe-loading
+   (the two never co-occur; the summary renders only when !loading) with
+   an amber rail, which is the rail idiom the rest of the project uses
+   for "this is marked" and agrees with the pills the sentence is
+   counting. Not a callout: it is a standing count rather than the
+   outcome of something the admin just did, and inventing a
+   .callout--warning off one page is exactly what components.css does
+   not do. The count is stated in words; the rail only agrees with
+   it. */
+.fe-summary {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--text-h);
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Rows ------------------------------------------------------------
+
+   One shape, two lists: the class roster and, inside the panel below,
+   that student's registered samples. Hairline-separated with no gap
+   between them -- an admin reads a roster down its left edge, and a
+   stack of separated capsules gives the eye a new starting point per
+   row and doubles the height of a thirty-student list for nothing. */
+
+.fe-items {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Both lists render their <ul> even when empty, and a bordered list
+   with no rows in it draws a stray hairline under the "No samples
+   registered yet." box. React emits no whitespace inside a <ul> built
+   from a .map, so :empty matches. */
+.fe-items:empty {
+  display: none;
+}
+
+/* The 3px left border is transparent on every row, so marking the open
+   one costs no layout shift; 5 + 3 = the 8px the right edge uses, so
+   text still starts on the list's own margin. */
+.fe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 8px 8px 5px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tracking a name across to its button is the physical act of using
+   this list, and the row is up to 820px wide.
+
+   :not(), rather than a plain :hover -- .fe-row--open below is (0,1,0)
+   and a bare .fe-row:hover would be (0,2,0), so hovering the open row
+   would repaint over the mark that says it is open. */
+.fe-row:not(.fe-row--open):hover {
+  background: var(--surface);
+}
+
+/* Whose faces the panel below is showing. The button already says
+   "Managing" in words, so the rail and the tint are a second, redundant
+   signal rather than the only one -- and they are what carries it
+   across thirty rows, where the label alone is one word among sixty. */
+.fe-row--open {
+  background: var(--accent-weak);
+  border-left-color: var(--accent);
+}
+
+/* Deactivated students stay in the roster and are marked, because an
+   admin enrolling a class has to see the whole class -- but they are
+   pushed back, and the broken line says so to anyone, including
+   someone who cannot tell the two text colours apart. */
+.fe-row--inactive {
+  border-bottom-style: dashed;
+}
+
+.fe-identity {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The name dominates: a step larger than the line under it, heavier,
+   and in --text-h while the metadata drops away. Before this it was the
+   inherited body size, one shade above the address under it, on a row
+   whose only job is to be found by name. A name is unbounded admin
+   input, so it is allowed to break. */
+.fe-name {
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.fe-row--inactive .fe-name {
+  color: var(--text);
+  text-decoration: line-through;
+}
+
+.fe-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+/* The address identifies the student; it is not what the row is found
+   by. Muted and small, and allowed to break -- these are real
+   institutional addresses and they are long. */
+.fe-email {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* --text-muted is contrast-checked against --bg and --surface, which is
+   every surface in this project except the accent tint: measured on
+   --accent-weak it is 4.47:1 in light and 4.49:1 in dark, both just
+   under the 4.5 floor. The one row that ever takes that tint moves its
+   address up to --text, which is 6.30 and 5.89 on the same fill. Same
+   correction .au-email carries, and for the same reason. */
+.fe-row--open .fe-email {
+  color: var(--text);
+}
+
+/* A neutral, factual label -- not a warning. The account is not at risk
+   and nothing has gone wrong; it is switched off.
+
+   Page-scoped on purpose, and identical to .ah-flag in
+   admin-academics.css and .au-flag in admin-users.css by design rather
+   than by accident. This is the THIRD independent implementation, and
+   the extraction into .pill--neutral -- migrating all three at once --
+   belongs to the teardown step that follows this page, not to a pass
+   that would otherwise have to edit two shipped screens it was not
+   asked to touch. See the report. */
+.fe-flag {
+  flex: none;
+  padding: 2px 8px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+/* How many samples this student has, which is the one number on the
+   page. A small-caps tag rather than a pill: every row has a count, and
+   thirty bordered badges down a list is a texture rather than a mark --
+   the call .au-role makes for the same reason. It sits above the email
+   in weight and colour and below the name, so a roster can be read for
+   coverage down its left edge.
+
+   Zero does NOT take this rule. See below. */
+.fe-samples {
+  flex: none;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Zero samples is not the lowest value of a count -- it is the one
+   condition this screen exists to remove. That student cannot be
+   recognised at all, so every lecture they attend is recorded as an
+   absence until somebody enrols them. It composes .pill and
+   .pill--warning from the vocabulary, which is the standing "this is a
+   caution, and here is the caution in words" mark; the text says "No
+   face samples" and the amber only agrees with it. Amber rather than
+   red because nothing has failed: it is work outstanding. */
+.fe-samples-none {
+  flex: none;
+}
+
+/* Manage faces / Delete. How a student's enrolment is maintained, not
+   how the row is read: smaller than the name and fixed width, so a
+   thirty-row roster forms one clean column at the right edge instead of
+   a field of buttons. Same size as the row actions on /admin/users and
+   /admin/academics, because they are the same kind of control. */
+.fe-action {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+/* The open row is tinted --accent-weak, which sits within a few points
+   of --surface -- so "Managing", which .btn--secondary fills with
+   --surface, would lose its edge on exactly the row the admin is
+   working in. It takes the inverse fill instead, and its hover moves to
+   --surface so it still travels the same distance the untinted rows do.
+   This is the relationship .card .btn--secondary, .ah-item--selected
+   .ah-action and .au-row--open .au-action all use. */
+.fe-row--open .fe-action.btn--secondary {
+  background: var(--bg);
+}
+
+.fe-row--open .fe-action.btn--secondary:hover {
+  background: var(--surface);
+}
+
+/* --- The selected student --------------------------------------------
+
+   A card, and the only one on the page, because it is a different kind
+   of object from the two bands above it -- the detail of the row that
+   was selected, not a third step. The accent rail is the same 3px mark
+   that row carries, so the two read as one object even after the roster
+   has scrolled. Same call .ah-class makes for the selected class. */
+
+.fe-student {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+}
+
+.fe-student-head {
+  margin: 0 0 12px;
+}
+
+/* A title at a readable size, not the small-caps eyebrow the bands
+   take: this names one student rather than a step, and it is the
+   heading that tells the admin whose face they are about to register.
+   It was 1rem uppercase and letterspaced -- the same label as
+   "ROSTER" above it. */
+.fe-student-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The card is --surface, so its rows invert: --bg is what "hovered"
+   means inside it. (0,3,0), the same as .fe-row:not(...):hover above,
+   and later in the file -- which is the order these two have to be in.
+   A sample row never carries --open, so nothing else is affected. */
+.fe-student .fe-row:hover {
+  background: var(--bg);
+}
+
+/* "Registered samples (3)" -- a section of the card rather than a line
+   in it, so 20 above, matching the gap between the page's blocks. */
+.fe-subtitle {
+  margin: 20px 0 0;
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* --- The capture control ---------------------------------------------
+
+   FaceCapture: pick a file, or take a photo with the webcam. The
+   designed twin of this is ClassroomCapture on the faculty capture
+   screen (.fa-capture / .fa-file / .fa-live / .fa-live-actions), which
+   this deliberately follows -- same file-input chrome, same framed
+   preview, same primary/secondary pairing on the two webcam buttons --
+   because they are the same control doing the same job for a different
+   subject, and an admin who has used one should recognise the other.
+
+   Three deliberate divergences, all downstream of what is in frame:
+
+     The preview is capped at 320px rather than 360px. That screen
+     frames a whole room and wants every pixel; this one frames one
+     head and shoulders, and it sits inside a card that is already
+     inset 20px on both sides of an 820px measure.
+
+     The guidance paragraph leads rather than trails. On the faculty
+     screen it is a footnote under a control the user has already
+     used dozens of times; here it is a list of conditions the photo
+     has to meet -- face the camera, even light, no glare -- and a
+     rejected sample is a wasted round trip to the server. It reads
+     before the file picker, and .fe-guide is named for that rather
+     than borrowing .fa-note's name for a different job.
+
+     One file input, not two. There is no video path here: a face
+     encoding comes from a single still. */
+
+.fe-capture {
+  margin: 16px 0 0;
+}
+
+/* An error from the camera itself -- a denied permission, or a browser
+   with no mediaDevices at all. It is about the controls below it, so it
+   leads them. */
+.fe-capture .fe-alert {
+  margin: 0 0 12px;
+}
+
+.fe-guide {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* One file field beside the camera button. Wider than a picker select:
+   it holds a file name the admin chose, which can be anything. */
+.fe-file {
+  flex: 1 1 240px;
+  max-width: 320px;
+}
+
+/* A file input is the one control components.css cannot fully dress,
+   because the browser draws a button inside it. Sized down from the
+   field default so the row does not tower over the button beside it. */
+.fe-file input[type='file'] {
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* --surface against the input's --bg fill -- the inverse of the card it
+   sits on, which is the same relationship .card .btn--secondary uses.
+   6px rather than --radius-sm: this corner is nested inside the input's
+   8px one, and matching it would make the two look mis-stacked. */
+.fe-file input[type='file']::file-selector-button {
+  font: inherit;
+  font-size: 0.8rem;
+  margin-right: 10px;
+  padding: 5px 10px;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fe-file input[type='file']:hover:not(:disabled)::file-selector-button {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+/* Every control on the panel disables together while a sample is being
+   registered, and a file input gives no sign of it on its own. */
+.fe-file input[type='file']:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.fe-btn {
+  flex: 0 0 auto;
+}
+
+.fe-live {
+  margin-top: 12px;
+}
+
+/* Constrains the live preview -- without a width the <video> renders at
+   the camera's native resolution and pushes the capture button off
+   screen, which is all the rule it used to have. The frame is the rest
+   of it: a bordered --bg well inside the --surface card, so the preview
+   reads as output rather than as an image that failed to load.
+
+   box-sizing, because this project has no universal reset -- only #root
+   in base.css and .card in components.css set it, and a <video> is
+   neither. Without it `width: 100%` sizes the CONTENT box and the 1px
+   frame is added outside it, so the preview is 2px wider than the
+   column it sits in. Measured in the card at 360: the preview came out
+   286px against 284px of card interior, its right border landing 2px
+   into the card's 20px gutter, and the same at 320 (246 against 244).
+   It is invisible from 398px up, where max-width caps the preview
+   before 100% can bind -- which is why a rule that has been here since
+   the design pass only misbehaves on a phone.
+
+   The cap now measures the frame rather than the picture, so the video
+   is 320px wide instead of 322px wherever the cap binds. That is the
+   number the rule always meant.
+
+   Its faculty twin, .fa-live video in faculty-attendance.css, had the
+   same declaration without box-sizing and the same 2px at phone widths
+   against its own 360px cap. It carries box-sizing now too -- the two
+   rules are the same rule, and leaving one of them wrong on a shipped
+   page was not worth the tidier diff. */
+.fe-live video {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* The webcam's two buttons. Not .fe-capture-form: that is a row of
+   *fields* and aligns to flex-end so a label stacked over a control
+   lines up with a bare button beside it. There are no labels here, so
+   that alignment has nothing to do and the row is centred instead. */
+.fe-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+}
+
+/* --- One registered sample -------------------------------------------
+
+   The same row as the roster, with a timestamp where a name would be:
+   when the sample was taken is what tells two of them apart. */
+
+.fe-when {
+  color: var(--text-h);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.3;
+  /* A stack of timestamps only reads as a column if the digits line
+     up. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Camera capture / Uploaded photo -- which of the two paths produced
+   this sample, and the only thing on the line an admin acts on. Above
+   the model in weight and colour, the same step .fe-samples takes over
+   the address. */
+.fe-source {
+  flex: none;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The detector model the encoding was made with -- provenance, kept
+   because a future re-encoding migration reads it, and recessed
+   because no admin acts on it. */
+.fe-model {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* --- A picker select takes its line, to 407px ------------------------
+
+   Five .fe-field, basis 180, growing, capped at 280, in a 16px-gapped
+   wrapping line whose width is the page measure: V - 64 above 480,
+   V - 32 at 480 and below (base.css halves the outer gutter there).
+
+   Measured, with this rule off:
+
+     636px   picker 572 -- exactly 3x180 + 2x16 -- three fields on line
+             one at 180, Course and Class sharing line two at 278
+     635px   picker 571, two per line at 277.5, Class alone on line
+             three at its 280 cap
+     480px   picker 448, two per line at 216, Class alone at 280
+     408px   picker 376, two per line at 180 -- the last width where any
+             two still fit
+     407px   picker 375, ONE PER LINE, every field stuck at its 280 cap
+             in a 375px line
+
+   From 407 down the cap stops being a cap and becomes a short
+   measure: a field is alone on its line, has flex-grow, and is held
+   back by max-width alone. It costs 95px at 407 and 48px at 360 -- on
+   controls holding "Charotar University of Science and Technology" and
+   "Design and Analysis of Algorithms", which are ellipsised at 280 and
+   are the whole content of the control. A <select> cannot be read past
+   its width, and the admin is choosing between items that differ at
+   the end of the string.
+
+   407 rather than 480, deliberately. At 408-480 two fields still share
+   a line, and lifting the cap there would force all five onto their own
+   lines to gain nothing: three extra rows at ~85px, 255px of scrolling
+   on a phone-sized window, so a Class select could be wider than it
+   already is. The rule is keyed to where the line already holds one
+   field, not to where the viewport gets small.
+
+   Only max-width moves. The basis and the grow are what already put
+   one field on the line; taking the ceiling off is the whole change.
+
+   480 and not the 407 this block was first keyed to. 407 was measured
+   with the old 180 basis, as the first width where every field was
+   alone on its line, and the reasoning then was that lifting the cap
+   any earlier would cost rows for nothing. Raising the basis to 200
+   changed what "for nothing" means: from 408 to 480 the fields sit two
+   to a line at 180-216px, which is 158-194px of text room against the
+   250.8px the longest department name needs, so the name is clipped
+   through that whole band. One field per line at full width reads it
+   (354-386px of text room) and costs two extra rows. Verified in a
+   browser at 480/440/420/408 on the real roster.
+
+   Scoped to .fe-picker, never to .fe-field itself: .fe-file in the
+   capture control is a .fe-field too, with its own 320px cap and a
+   button that shares its line -- see below. */
+@media (max-width: 480px) {
+  .fe-picker .fe-field {
+    max-width: none;
+  }
+}
+
+/* --- The capture control is deliberately untouched -------------------
+
+   .fe-capture-form holds one .fe-file (basis 240, capped 320) beside
+   "Use camera" (108.3px, flex: none), and .fe-live-actions holds "Take
+   photo" and "Stop camera". Both were measured down to 320 and neither
+   breaks: the button drops below the file field at 360 and lands at the
+   line's left edge, which is the ordinary form shape, and the two
+   webcam buttons still share a line at 320 (238px against 244px of card
+   interior). The file input never overflows -- checked at every width
+   with a real 52-character filename selected, which Chrome elides
+   inside the control rather than pushing the layout. No rule. */
+
+/* --- Touch targets ---------------------------------------------------
+
+   .fe-action is the design's density decision: 0.78rem at 4px 10px,
+   which computes to 35.7px against the 44.1px a plain .btn gets, and
+   that is right for a laptop reading a thirty-student roster. It is not
+   right for a thumb -- and "Manage faces" is how this page is used at
+   all, while "Delete" beside a sample is destructive.
+
+   44px is .btn's own height, so this restores the size the rest of the
+   project already uses rather than inventing one, and only where a
+   finger is doing the pointing. Nothing about the chrome, the label or
+   the density on a mouse changes.
+
+   admin-academics.css introduced (pointer: coarse) for exactly this and
+   admin-users.css followed it; a touch target is a property of the
+   input device, not of the viewport, and a tablet at 1024px never
+   reaches a width breakpoint.
+
+   The width half, which the design pass left to this review:
+
+   480, the same number admin-users.css settled on, and here it is not
+   even a trade. .fe-row is identity-then-one-button, and the identity
+   block is two stacked lines -- the name over the metadata -- so it is
+   already taller than 44px long before the button is:
+
+     480px   row 68.5, identity 51.5, button beside it at 36.1
+     410px   row 98.6, identity 82   -- the metadata line has wrapped
+     381px   row 98.6, identity 82,  button still beside it
+     380px   row 112.6, identity 51.5, BUTTON on its own line
+
+   So from 381 to 480 the button shares the row's line with a 51.5px or
+   82px identity, and taking it to 44 changes the row height by nothing
+   at all: the row is as tall as the identity either way. Only below 381,
+   where the button has a line of its own, does it cost anything, and
+   there it is 8px a row -- the same 8px admin-users.css pays across its
+   whole range. A thirty-student roster pays 240px of scrolling for it
+   on a phone, and gets a "Manage faces" target a thumb can actually
+   hit; the same rule fixes Delete on the sample rows, which is
+   destructive.
+
+   The strict analogue of admin-users' 594 -- the width where this
+   page's action first gains its own line -- is 380, and it is NOT used.
+   That number would put the whole 381-480 band, where 44px is free, on
+   35.7px targets. Where admin-users had to justify choosing 480 over a
+   larger measured number, this page would have to justify choosing a
+   smaller one, and there is nothing to justify: 480 is where base.css
+   and shell.css already declare the viewport hand-held, and it is the
+   width from which this costs the least it ever will. */
+@media (max-width: 480px), (pointer: coarse) {
+  .fe-action {
+    min-height: 44px;
+  }
+}

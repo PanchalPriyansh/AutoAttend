@@ -21,6 +21,15 @@ const LEVELS = [
   { key: 'class', label: 'Class', resource: classes, parent: 'course' },
 ]
 
+// Built once rather than per row: this formats every sample's timestamp
+// inside a .map. The locale stays the runtime's own, as toLocaleString()
+// had it, but the fields are named explicitly so the column that
+// .fe-when renders in tabular-nums keeps one shape everywhere.
+const SAMPLE_TAKEN_AT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 /**
  * Read-only sibling of AcademicHierarchy's useHierarchyLevel: this screen
  * only needs to *reach* a class, not manage the hierarchy, so it reuses the
@@ -194,25 +203,28 @@ function FaceEnrollment() {
 
   return (
     <AppShell title="Face Enrollment">
-      <p className="hierarchy-hint">
+      <p className="fe-intro">
         Register each student&apos;s face so attendance can recognise them later. Photos are
         never stored — only the numeric encoding derived from them. A student with no
         samples cannot be recognised at all.
       </p>
 
-      <section className="hierarchy-level" aria-labelledby="class-picker-heading">
-        <header className="hierarchy-header">
-          <h2 id="class-picker-heading">Choose a class</h2>
+      <section className="fe-panel" aria-labelledby="class-picker-heading">
+        <header className="fe-head">
+          <h2 id="class-picker-heading" className="fe-eyebrow">
+            Choose a class
+          </h2>
         </header>
 
-        <div className="hierarchy-form">
+        <div className="fe-picker">
           {LEVELS.map((level) => {
             const parentSelected = level.parent === null || Boolean(selection[level.parent])
             return (
-              <span className="field" key={level.key}>
+              <span className="form-field fe-field" key={level.key}>
                 <label htmlFor={`pick-${level.key}`}>{level.label}</label>
                 <select
                   id={`pick-${level.key}`}
+                  name={level.key}
                   value={selection[level.key]}
                   onChange={(event) => select(level.key, event.target.value)}
                   disabled={!parentSelected}
@@ -231,96 +243,135 @@ function FaceEnrollment() {
       </section>
 
       {classId && (
-        <section className="hierarchy-level" aria-labelledby="roster-heading">
-          <header className="hierarchy-header">
-            <h2 id="roster-heading">Roster ({roster.length})</h2>
+        <section className="fe-panel" aria-labelledby="roster-heading">
+          <header className="fe-head">
+            <h2 id="roster-heading" className="fe-eyebrow">
+              Roster ({roster.length})
+            </h2>
           </header>
 
           {error && (
-            <p role="alert" className="hierarchy-error">
+            <p role="alert" className="callout callout--error fe-alert">
+              <span className="callout-mark" aria-hidden="true">
+                !
+              </span>
               {error}
             </p>
           )}
-          {loading && <p className="hierarchy-hint">Loading…</p>}
-          {!loading && !error && roster.length === 0 && (
-            <p className="hierarchy-hint">
-              No students are enrolled in this class yet. Enroll them from the academic
-              hierarchy screen first.
-            </p>
-          )}
-          {!loading && !error && roster.length > 0 && unenrolled > 0 && (
-            <p className="hierarchy-hint">
-              {unenrolled} of {roster.length} students have no face samples yet.
-            </p>
-          )}
+          {/* Always rendered, so the region exists before its content
+              changes -- a live region inserted at the same moment as
+              its text is announced unreliably. The error above stays
+              outside it and keeps role="alert". */}
+          <div aria-live="polite">
+            {loading && <p className="fe-loading">Loading…</p>}
+            {!loading && !error && roster.length === 0 && (
+              <p className="fe-empty">
+                No students are enrolled in this class yet. Enroll them from the academic
+                hierarchy screen first.
+              </p>
+            )}
+            {!loading && !error && roster.length > 0 && unenrolled > 0 && (
+              <p className="fe-summary">
+                {unenrolled} of {roster.length} students have no face samples yet.
+              </p>
+            )}
+          </div>
 
-          <ul className="hierarchy-items">
-            {roster.map((row) => (
-              <li
-                key={row.student.id}
-                className={row.student.is_active ? undefined : 'is-inactive'}
-              >
-                <span className="user-identity">
-                  <span className="user-name">{row.student.name}</span>
-                  <span className="hierarchy-hint">
-                    {row.student.email}
-                    {!row.student.is_active && ' · Deactivated'}
-                    {' · '}
-                    {row.sample_count === 0
-                      ? 'No face samples'
-                      : `${row.sample_count} face sample${row.sample_count === 1 ? '' : 's'}`}
+          <ul className="fe-items">
+            {roster.map((row) => {
+              const open = selectedStudent?.id === row.student.id
+              const rowClass = [
+                'fe-row',
+                open ? 'fe-row--open' : '',
+                row.student.is_active ? '' : 'fe-row--inactive',
+              ]
+                .filter(Boolean)
+                .join(' ')
+
+              return (
+                <li key={row.student.id} className={rowClass}>
+                  <span className="fe-identity">
+                    <span className="fe-name">{row.student.name}</span>
+                    <span className="fe-meta">
+                      <span className="fe-email">{row.student.email}</span>
+                      {!row.student.is_active && <span className="fe-flag">Deactivated</span>}
+                      {row.sample_count === 0 ? (
+                        <span className="pill pill--warning fe-samples-none">No face samples</span>
+                      ) : (
+                        <span className="fe-samples">
+                          {row.sample_count} face sample{row.sample_count === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </span>
                   </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => openStudent(row.student)}
-                  disabled={pending}
-                >
-                  {selectedStudent?.id === row.student.id ? 'Managing' : 'Manage faces'}
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    className="btn btn--secondary fe-action"
+                    onClick={() => openStudent(row.student)}
+                    disabled={pending}
+                  >
+                    {open ? 'Managing' : 'Manage faces'}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}
 
       {selectedStudent && (
-        <section className="hierarchy-level" aria-labelledby="student-faces-heading">
-          <header className="hierarchy-header">
-            <h2 id="student-faces-heading">Faces: {selectedStudent.name}</h2>
+        <section className="card fe-student" aria-labelledby="student-faces-heading">
+          <header className="fe-student-head">
+            <h2 id="student-faces-heading" className="fe-student-title">
+              Faces: {selectedStudent.name}
+            </h2>
           </header>
 
           {actionError && (
-            <p role="alert" className="hierarchy-error">
+            <p role="alert" className="callout callout--error fe-alert">
+              <span className="callout-mark" aria-hidden="true">
+                !
+              </span>
               {actionError}
             </p>
           )}
-          {notice && <p className="hierarchy-hint">{notice}</p>}
+          {/* Same reasoning as the roster panel above: the region is
+              present from the moment this panel opens, so the success
+              that follows a capture is actually announced. */}
+          <div aria-live="polite">
+            {notice && (
+              <p className="callout callout--success fe-alert">
+                <span className="callout-mark" aria-hidden="true">
+                  ✓
+                </span>
+                {notice}
+              </p>
+            )}
+          </div>
 
           <FaceCapture onCapture={handleCapture} disabled={pending} />
 
-          <h3 className="hierarchy-subheading">Registered samples ({encodings.length})</h3>
+          <h3 className="fe-subtitle">Registered samples ({encodings.length})</h3>
 
-          {encodings.length === 0 && (
-            <p className="hierarchy-hint">No samples registered yet.</p>
-          )}
+          {encodings.length === 0 && <p className="fe-empty">No samples registered yet.</p>}
 
-          <ul className="hierarchy-items">
+          <ul className="fe-items">
             {encodings.map((encoding) => (
-              <li key={encoding.id}>
-                <span className="user-identity">
-                  <span className="user-name">
-                    {new Date(encoding.created_at).toLocaleString()}
+              <li key={encoding.id} className="fe-row">
+                <span className="fe-identity">
+                  <span className="fe-when">
+                    {SAMPLE_TAKEN_AT.format(new Date(encoding.created_at))}
                   </span>
-                  <span className="hierarchy-hint">
-                    {encoding.source === 'camera' ? 'Camera capture' : 'Uploaded photo'}
-                    {' · '}
-                    {encoding.model}
+                  <span className="fe-meta">
+                    <span className="fe-source">
+                      {encoding.source === 'camera' ? 'Camera capture' : 'Uploaded photo'}
+                    </span>
+                    <span className="fe-model">{encoding.model}</span>
                   </span>
                 </span>
                 <button
                   type="button"
-                  className="danger"
+                  className="btn btn--danger fe-action"
                   onClick={() => {
                     setActionError('')
                     setPendingDeletion(encoding)

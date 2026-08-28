@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const ROLES = ['admin', 'faculty', 'student']
 
@@ -28,6 +28,18 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
   const [values, setValues] = useState(() => initialValues(user))
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const errorRef = useRef(null)
+
+  // The backend answers with one message for the whole form ("Email
+  // already registered"), not a per-field one, so there is no first
+  // field to send focus to -- the message itself is the target. It is
+  // focused rather than merely announced so a keyboard user is taken to
+  // it instead of being left on a Save button that appeared to do
+  // nothing. Runs after render, because the node does not exist at the
+  // moment setError is called.
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
 
   const isCreate = mode === 'create'
 
@@ -60,23 +72,30 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
   const idPrefix = isCreate ? 'new-user' : `edit-user-${user.id}`
 
   return (
-    <form className="hierarchy-form" onSubmit={handleSubmit}>
-      <span className="field">
+    <form
+      className={isCreate ? 'au-form au-form--create' : 'au-form au-form--edit'}
+      onSubmit={handleSubmit}
+    >
+      <span className="form-field au-field">
         <label htmlFor={`${idPrefix}-name`}>Name</label>
         <input
           id={`${idPrefix}-name`}
+          name="name"
           type="text"
+          autoComplete="off"
           value={values.name}
           onChange={(event) => setField('name', event.target.value)}
           required
         />
       </span>
 
-      <span className="field">
+      <span className="form-field au-field">
         <label htmlFor={`${idPrefix}-email`}>Email</label>
         <input
           id={`${idPrefix}-email`}
+          name="email"
           type="email"
+          spellCheck={false}
           value={values.email}
           onChange={(event) => setField('email', event.target.value)}
           autoComplete="off"
@@ -85,10 +104,11 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
       </span>
 
       {isCreate && (
-        <span className="field">
+        <span className="form-field au-field">
           <label htmlFor={`${idPrefix}-password`}>Password</label>
           <input
             id={`${idPrefix}-password`}
+            name="password"
             type="password"
             value={values.password}
             onChange={(event) => setField('password', event.target.value)}
@@ -98,11 +118,12 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
         </span>
       )}
 
-      <span className="field">
+      <span className="form-field au-field">
         <label htmlFor={`${idPrefix}-role`}>Role</label>
         {isCreate ? (
           <select
             id={`${idPrefix}-role`}
+            name="role"
             value={values.role}
             onChange={(event) => setField('role', event.target.value)}
           >
@@ -113,14 +134,15 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
             ))}
           </select>
         ) : (
-          <input id={`${idPrefix}-role`} type="text" value={values.role} readOnly />
+          <input id={`${idPrefix}-role`} name="role" type="text" value={values.role} readOnly />
         )}
       </span>
 
-      <span className="field">
+      <span className="form-field au-field">
         <label htmlFor={`${idPrefix}-institute`}>Institute</label>
         <select
           id={`${idPrefix}-institute`}
+          name="institute_id"
           value={values.institute_id}
           onChange={(event) => setField('institute_id', event.target.value)}
         >
@@ -133,15 +155,23 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
         </select>
       </span>
 
-      <button type="submit" disabled={submitting}>
+      <button type="submit" className="btn btn--primary au-submit" disabled={submitting}>
         {submitting ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" onClick={onCancel} disabled={submitting}>
+      <button
+        type="button"
+        className="btn btn--secondary au-submit"
+        onClick={onCancel}
+        disabled={submitting}
+      >
         Cancel
       </button>
 
       {error && (
-        <p role="alert" className="hierarchy-error">
+        <p ref={errorRef} tabIndex={-1} role="alert" className="callout callout--error au-alert">
+          <span className="callout-mark" aria-hidden="true">
+            !
+          </span>
           {error}
         </p>
       )}
