@@ -25,7 +25,14 @@
   --accent: #4c3fb5;
   --accent-hover: #3d3296;
   /* Tinted backgrounds -- selected rows, active nav, callouts -- where a
-     full-strength accent would shout. */
+     full-strength accent would shout.
+
+     --text-muted may NOT sit on this tint: 4.47:1 light, 4.49:1 dark,
+     both under the 4.5 floor. Every row that tints itself and carries a
+     muted line moves that line to --text (6.30 / 5.89) on its own
+     selector -- .au-row--open .au-email, .fe-row--open .fe-email,
+     .fh-session--open .fh-session-facts. --text-h, --text and .pill
+     fills are all clear. */
   --accent-weak: #eeecf9;
   /* Teal-leaning rather than a grass green: it sits beside indigo without
      clashing, and it is dark enough to be legible as small text on white,
