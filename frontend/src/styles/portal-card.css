@@ -1,0 +1,249 @@
+/* --- The portal card (PortalCard) ------------------------------------
+
+   One component, rendered by three pages: /student, /faculty and /admin
+   each list their role's destinations from navigation.js, and every one
+   of those destinations is one of these -- a label, a sentence, a
+   chevron, and a hit area that is the whole card.
+
+   It has its own file for the reason faculty-roster-row.css and
+   confirm-dialog.css do: it is neither a page nor a primitive.
+
+   Not a page. It was written three times, once per redesign group, and
+   each copy said in its own comments that the three portals should look
+   identical -- which is a dependency nothing declared and nothing would
+   notice breaking. By the time it was extracted the three had already
+   drifted on four values, including a raw `12px` that no longer read as
+   the --radius-md it was.
+
+   Not a primitive either. components.css holds patterns with two
+   INDEPENDENT implementations, and each of them is one class a page
+   composes onto its own element. This is four coupled classes, two
+   pseudo-elements and a :has() relationship between them; a page cannot
+   compose half of it, and there is nothing here another page could
+   reach for.
+
+   The split with the pages is strict, and it is where the three used to
+   disagree: this file owns the CARD -- its padding, its chevron, its
+   stretched hit area, and the hover, press and focus mechanics. Each
+   page owns how it ARRANGES a list of them, because those are three
+   different arguments: .student-home is a single 600px-capped door,
+   .faculty-home a measured two-up, .admin-portal a board with a
+   laptop-band rule. None of that is here.
+
+   .card carries the fill, the hairline and the corner. What is left is
+   below.
+
+   Loaded with the other shared components, above every page that
+   renders it, so any of the three could override a rule here with a
+   plain later selector. None does. */
+
+.portal-card {
+  position: relative;
+  padding: 20px 48px 20px 20px;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+/* The hover shadow is faded in on its own layer rather than transitioned
+   on the card. box-shadow cannot be composited, so animating it repaints
+   the card every frame; opacity is handed to the compositor instead.
+
+   ::before is free -- the chevron is the card's ::after, the stretched
+   hit area is the link's. inset is -1px because an absolutely positioned
+   child resolves against the padding box, so -1px puts the layer back on
+   the border-box edge where the shadow was drawn before. It covers
+   nothing (the shadow paints outside its own box) and takes no clicks.
+
+   var(--shadow) rather than a written shadow, so the dark palette's
+   darker well is picked up. */
+.portal-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+/* The "go here" chevron, drawn from two borders rather than set as text
+   so no assistive technology announces a stray character. pointer-events
+   is off because it paints over the stretched hit area below, and a
+   click landing on the chevron would otherwise do nothing.
+
+   `top` is tuned against the label's first line -- 20px of padding plus
+   half of a 1.15rem/1.3 line box -- so changing the card's padding-top
+   would pull it off that line. */
+.portal-card::after {
+  content: '';
+  position: absolute;
+  top: 27px;
+  right: 20px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  border-radius: 1px;
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition: transform 120ms ease;
+}
+
+/* The destination dominates: larger and heavier than the sentence under
+   it, and in --text-h while the sentence stays at --text. Size and
+   weight carry the hierarchy, so the label is not also underlined at
+   rest -- the card already reads as a target. */
+.portal-card-link {
+  color: var(--text-h);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-decoration: none;
+  /* navigation.js owns these labels and today's five are short. A long
+     one added later has to break inside the card rather than run under
+     the chevron gutter and out the side. */
+  overflow-wrap: break-word;
+  touch-action: manipulation;
+  /* Set deliberately rather than left to the UA: the tap target is the
+     stretched ::after below, but the default highlight is drawn around
+     the *link's own* box, so a tap anywhere on the card flashed a
+     rectangle around the label alone. The :has(:active) rule further
+     down tints the whole card instead, which is the right shape. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stretches the link over the whole card, so the sentence and the
+   padding are part of the target rather than a dead margin around one
+   26px line of text. Before this pattern existed, a one- or two-word
+   label was the only clickable thing inside a box that looked clickable
+   everywhere.
+
+   Done from CSS rather than by moving the <p> inside the <a>, which
+   would make the link's accessible name the entire paragraph. */
+.portal-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+}
+
+/* Kept at --text rather than dropped to --text-muted: several of these
+   sentences end in an operating constraint the reader needs ("There is
+   no public sign-up.", "Photos are never stored."), so the description
+   is secondary to the label but is not fine print.
+
+   line-height is set here rather than inherited, and it is load-bearing.
+   tokens.css sets `font: 18px/145%` on :root, and a *percentage*
+   line-height resolves against the font-size of the element it is
+   declared on and then inherits as that computed length -- so an
+   inheriting description sets 15.3px text inside a 26.1px line box. The
+   same trap shell.css:151 documents for the h1. */
+.portal-card-desc {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.portal-card:hover {
+  border-color: var(--accent);
+}
+
+.portal-card:hover::before {
+  opacity: 1;
+}
+
+.portal-card:hover .portal-card-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.portal-card:hover::after {
+  transform: translateX(3px) rotate(45deg);
+}
+
+/* Pressed feedback belongs on the card, because the card is what was
+   pressed. Where :has() is unsupported the card simply does not tint,
+   which costs nothing. */
+.portal-card:has(.portal-card-link:active) {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+}
+
+.portal-card:has(.portal-card-link:active)::before {
+  opacity: 0;
+}
+
+/* The ring goes on the stretched overlay so it outlines the card that is
+   about to open, not the two words of the label. The outline on the <a>
+   itself is dropped only because it would draw a second, tighter ring
+   inside this one -- the replacement is strictly more visible. */
+.portal-card-link:focus-visible {
+  outline: none;
+}
+
+.portal-card-link:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- Narrow widths -------------------------------------------------
+
+   Below 420px the grid is one card wide on all three portals, and the
+   48px right gutter is reserved for an 8px chevron, so it stops being
+   proportionate as the card narrows. Dropping it to 36px returns 12px
+   to every description.
+
+   Measured on /admin, with the rule off and then on:
+
+     420px   3,2,2 lines  ->  3,2,2   (nothing, already fits)
+     400px   3,3,3        ->  3,2,2   (a line off two cards, 44px)
+     375px   3,3,3        ->  3,3,3   (nothing)
+     360px   3,3,3        ->  3,3,3   (nothing)
+     320px   4,4,3        ->  4,3,3   (a line off one card, 23px)
+
+   So at the two widths this project actually targets down here it buys
+   measure but no height. It is kept because 12px of measure is a real
+   improvement at a 270px line and it costs nothing -- never worse, and
+   materially better at 400 and 320 -- but it should not be described as
+   a fix it is not. (Note for anyone re-measuring: the card is 328px at a
+   360px viewport, not 296px. base.css drops #root's gutters from 32px to
+   16px at 480 and below, so the card is 32px wider through this whole
+   range than the arithmetic assumes.)
+
+   420 rather than 480. /student carried 480 until this file existed, and
+   derived it from its own 56px right gutter -- "that number is the 56px
+   right gutter". That gutter is now 48, which is the exact premise the
+   faculty card used to pick 420 instead: at 48 it is already the tighter
+   of the two, so it stays as designed for longer. One breakpoint, from
+   the reasoning both pages were already using.
+
+   Only the right gutter moves. The 20px on the other three sides is the
+   card's breathing room; padding-top in particular is what the chevron's
+   `top: 27px` is tuned against, so changing it here would pull the
+   chevron off the label's first line. The chevron comes in with the
+   gutter rather than staying put, so the clearance between the sentence
+   and the glyph is preserved at 12px rather than merely squeezed. */
+@media (max-width: 420px) {
+  .portal-card {
+    padding-right: 36px;
+  }
+
+  .portal-card::after {
+    right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-card,
+  .portal-card::before,
+  .portal-card::after {
+    transition: none;
+  }
+
+  .portal-card:hover::after {
+    transform: rotate(45deg);
+  }
+}
