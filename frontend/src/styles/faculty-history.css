@@ -338,6 +338,16 @@
   overflow-wrap: anywhere;
 }
 
+/* --text-muted is contrast-checked against --bg and --surface, which is
+   every surface in this project except the accent tint: measured on
+   --accent-weak it is 4.47:1 in light and 4.49:1 in dark, both just
+   under the 4.5 floor. The one row that ever takes that tint moves its
+   counts up to --text, which is 6.30 and 5.89 on the same fill. Same
+   correction .au-email and .fe-email carry, and for the same reason. */
+.fh-session--open .fh-session-facts {
+  color: var(--text);
+}
+
 /* --- The audit mark --------------------------------------------------
 
    .pill .pill--warning, composed. This is the page's entire audit
