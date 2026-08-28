@@ -30,8 +30,10 @@
   justify-content: center;
   box-sizing: border-box;
   min-height: 100svh;
-  padding: max(32px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  padding: max(var(--space-32), env(safe-area-inset-top))
+    max(var(--space-16), env(safe-area-inset-right))
+    max(var(--space-32), env(safe-area-inset-bottom))
+    max(var(--space-16), env(safe-area-inset-left));
 }
 
 /* .card carries the fill, the border and the corner. This screen is a
@@ -41,7 +43,7 @@
 .auth-card {
   width: 100%;
   max-width: 400px;
-  padding: 32px;
+  padding: var(--space-32);
   box-shadow: var(--shadow);
 }
 
@@ -55,7 +57,7 @@
 }
 
 .auth-title {
-  margin: 4px 0 24px;
+  margin: var(--space-4) 0 var(--space-24);
   font-size: 1.6rem;
   line-height: 1.2;
 }
@@ -63,13 +65,13 @@
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-16);
 }
 
 /* The gap above the button, which is the form's own rhythm rather than
    anything about the button. */
 .auth-submit {
-  margin-top: 8px;
+  margin-top: var(--space-8);
 }
 
 /* The button is only ever disabled while the request is in flight, and
@@ -83,8 +85,8 @@
 /* Why there is no sign-up link. Without this the page looks unfinished
    to anyone who arrives without an account. */
 .auth-note {
-  margin: 24px 0 0;
-  padding-top: 16px;
+  margin: var(--space-24) 0 0;
+  padding-top: var(--space-16);
   color: var(--text);
   font-size: 0.8rem;
   border-top: 1px solid var(--border);

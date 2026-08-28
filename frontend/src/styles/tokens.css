@@ -1,13 +1,14 @@
-/* Design tokens -- the whole palette in both themes, and the radii.
+/* Design tokens -- the whole palette in both themes, the radii, and the
+   spacing scale.
 
    Every colour below is declared here and referenced by name elsewhere --
    a raw hex in a component rule is a bug, because it cannot follow the
    dark palette and nothing will notice until somebody switches theme.
 
-   The radii at the end are the other kind of token: constants shared by
-   the primitives in components.css rather than colours. They sit outside
-   both theme blocks because a corner does not change with the palette.
-   There is deliberately no spacing scale -- see components.css.
+   The radii and the spacing at the end are the other kind of token:
+   constants shared across files rather than colours. They sit outside
+   both theme blocks because neither a corner nor a gap changes with the
+   palette.
 
    Body text is #5a5364 rather than something lighter so it clears 6:1 on
    white: the previous value sat close enough to the 4.5:1 floor that it
@@ -55,6 +56,41 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-pill: 999px;
+
+  /* The spacing rhythm the redesign converged on, named by its own value:
+     --space-12 IS 12px, and reads as plainly as the literal did. That is
+     the answer to the objection components.css used to raise against a
+     scale, which was aimed at INDEX names -- `--space-3` forces a lookup
+     at every read, and hides which value it is you are changing.
+
+     What the naming buys is that the set can now be enumerated and
+     departed from visibly: a bare 10px in a padding means "deliberately
+     off this scale" rather than "nobody was counting".
+
+     Every value here was already in use in three or more stylesheets --
+     nothing is added for symmetry or for later. There is no --space-6,
+     --space-36 or --space-48, because the declarations carrying those
+     numbers are control internals rather than layout, and they stay
+     literal for the same reason the data visuals keep their radii above:
+     input and select padding (10px 12px), the pill paddings (4px 10px,
+     5px 10px), .btn (8px 14px), the accent-bar rows whose left padding
+     is short by the 3px the bar occupies (8px 8px 8px 5px), and the
+     portal card's chevron gutter. Those are tuned to type metrics and to
+     specific geometry, not to a rhythm.
+
+     Not themed, and not responsive: no --space-* is redeclared in the
+     dark block or inside a media query. A page that tightens at a
+     breakpoint declares a different value on its own selector, measured
+     for that page, exactly as it does today -- redefining the scale per
+     breakpoint would make one var(--space-24) mean two things. */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
 
   font: 18px/145% system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;

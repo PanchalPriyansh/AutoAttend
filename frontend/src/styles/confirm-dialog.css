@@ -52,7 +52,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: var(--space-24);
   overscroll-behavior: contain;
   background: rgb(0 0 0 / 45%);
 }
@@ -60,7 +60,7 @@
 .dialog {
   width: 100%;
   max-width: 420px;
-  padding: 24px;
+  padding: var(--space-24);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -86,9 +86,9 @@
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-12);
   justify-content: flex-end;
-  margin-top: 20px;
+  margin-top: var(--space-20);
 }
 
 /* The dialog itself is focusable (tabIndex -1) so the focus trap has

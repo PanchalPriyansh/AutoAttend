@@ -40,7 +40,7 @@
   display: flex;
   flex: 1 1 200px;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -67,7 +67,7 @@
 .fa-row-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-4) var(--space-8);
   align-items: center;
 }
 

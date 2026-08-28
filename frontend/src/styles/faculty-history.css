@@ -73,7 +73,7 @@
      is a card of form controls whose <select> is as wide as its longest
      option. A 0 minimum lets the track shrink and the fields follow. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: var(--space-20);
   /* The capture screen's measure, not .page's 1100, and for the same
      reason: a roster row puts a student's name at the left edge and
      their present/absent toggle at the right, and past about 820 the
@@ -112,10 +112,10 @@
 .fh-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: var(--space-4) var(--space-12);
   align-items: baseline;
   justify-content: space-between;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
 }
 
 .fh-eyebrow {
@@ -155,7 +155,7 @@
 .fh-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: var(--space-12) var(--space-16);
   align-items: flex-end;
   margin: 0;
 }
@@ -188,7 +188,7 @@
 /* The selected class's place in the hierarchy -- context, not content,
    so it recedes below the controls it describes. */
 .fh-context {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   color: var(--text-muted);
   font-size: 0.8rem;
 }
@@ -200,8 +200,8 @@
    list is empty on purpose, which is the difference between an answer
    and a bug. Same treatment as the capture screen's .fa-empty. */
 .fh-empty {
-  margin: 12px 0 0;
-  padding: 16px;
+  margin: var(--space-12) 0 0;
+  padding: var(--space-16);
   color: var(--text);
   font-size: 0.85rem;
   text-align: center;
@@ -214,7 +214,7 @@
    A bordered strip rather than a grey caption, because it is a state
    and not a footnote. */
 .fh-loading {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 10px 12px;
   color: var(--text-h);
   font-size: 0.85rem;
@@ -262,7 +262,7 @@
 }
 
 .fh-list {
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--border);
@@ -274,7 +274,7 @@
 .fh-session {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 16px;
+  gap: var(--space-4) var(--space-16);
   align-items: center;
   padding: 8px 8px 8px 5px;
   border-left: 3px solid transparent;
@@ -305,7 +305,7 @@
   display: flex;
   flex: 1 1 200px;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -325,7 +325,7 @@
 .fh-session-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-4) var(--space-8);
   align-items: center;
 }
 
@@ -394,9 +394,9 @@
 .fh-pager {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--space-8) var(--space-12);
   align-items: center;
-  margin: 12px 0 0;
+  margin: var(--space-12) 0 0;
 }
 
 .fh-range {
@@ -422,7 +422,7 @@
    heading, the provenance line, the rows and the two actions are all
    one lecture. */
 .fh-detail {
-  padding-left: 12px;
+  padding-left: var(--space-12);
   border-left: 3px solid var(--accent);
 }
 
@@ -432,15 +432,15 @@
 .fh-provenance {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-4) var(--space-8);
   align-items: center;
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-4);
   color: var(--text-muted);
   font-size: 0.8rem;
 }
 
 .fh-instruction {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
   max-width: 68ch;
   color: var(--text);
   font-size: 0.85rem;
@@ -479,9 +479,9 @@
 .fh-roster .fa-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 16px;
+  gap: var(--space-4) var(--space-16);
   align-items: center;
-  padding: 8px;
+  padding: var(--space-8);
   border-bottom: 1px solid var(--border);
 }
 
@@ -511,10 +511,10 @@
 .fh-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
   margin: 0;
-  padding-top: 16px;
+  padding-top: var(--space-16);
   border-top: 1px solid var(--border);
 }
 
@@ -618,7 +618,7 @@
     grid-template-columns: minmax(0, 1fr);
     /* 8 rather than 4: stacked, this gap separates a block from its
        control, not two lines of the same block. */
-    gap: 8px;
+    gap: var(--space-8);
   }
 
   .fh-roster .fa-row .fa-toggle {
@@ -656,7 +656,7 @@
 
   .fh-delete {
     align-self: flex-start;
-    margin-top: 8px;
+    margin-top: var(--space-8);
     margin-left: 0;
   }
 }

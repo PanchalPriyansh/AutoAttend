@@ -15,8 +15,9 @@
    buttons in the header compose .btn .btn--secondary rather than
    declaring their own chrome, and the focus ring is global, in base.css.
 
-   Still deferred on purpose, each its own spec: a spacing scale, and a
-   manual theme toggle. */
+   The spacing scale it used to defer now exists (--space-* in
+   tokens.css), and this file's spacing composes it. Still deferred on
+   purpose, its own spec: a manual theme toggle. */
 
 /* Hidden by .visually-hidden (further down, and reused rather than
    duplicated) until focused; this undoes that hiding and puts the link
@@ -28,7 +29,7 @@
   z-index: 10;
   width: auto;
   height: auto;
-  padding: 8px 12px;
+  padding: var(--space-8) var(--space-12);
   clip-path: none;
   color: var(--text-h);
   background: var(--bg);
@@ -39,11 +40,11 @@
 .app-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 24px;
+  gap: var(--space-12) var(--space-24);
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 16px;
-  margin-bottom: 24px;
+  padding-bottom: var(--space-16);
+  margin-bottom: var(--space-24);
   border-bottom: 1px solid var(--border);
 }
 
@@ -72,9 +73,9 @@
    689px up for every role, and already correct. */
 @media (max-width: 480px) {
   .app-header {
-    gap: 8px 12px;
-    padding-bottom: 12px;
-    margin-bottom: 16px;
+    gap: var(--space-8) var(--space-12);
+    padding-bottom: var(--space-12);
+    margin-bottom: var(--space-16);
   }
 }
 
@@ -95,7 +96,7 @@
 .app-nav ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-16);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -191,8 +192,8 @@
   .app-nav--open ul {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-8);
+    margin-top: var(--space-8);
   }
 
   /* An open panel makes the nav the tallest thing on its row, and the
@@ -230,7 +231,7 @@
 
 .app-user {
   display: flex;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
   /* A flex item will not shrink below its content unless told it may, so
      without this a long name pushes Log out toward the edge instead of
