@@ -1,17 +1,22 @@
-/* --- App shell (temporary styling) ---------------------------------
+/* --- App shell -----------------------------------------------------
 
-   Scaffolding, not a design. Every page's real styling is being done
-   one group at a time through /frontend-maker, and this frame is
-   expected to be replaced when the groups reach it.
+   The frame the nine signed-in pages sit in: the skip link, the header
+   (brand, nav, user), the <main> landmark, and the page title.
 
-   So keep it short. It exists so the header, the nav, and the current
-   page are legible in the meantime -- not to establish a look.
+   This file used to open by calling itself temporary scaffolding, to be
+   replaced when the redesign reached it. The redesign has finished --
+   every page is now styled by a file named after what it styles, and
+   scaffolding.css is deleted -- and the frame was kept rather than
+   replaced, so that warning outlived the thing it warned about. What is
+   here is the shell's styling, not a placeholder for it.
 
-   The vocabulary this file was told not to invent now exists, extracted
-   from the pages that have actually been designed: see components.css.
-   The header's logout button is the one thing here that turned out to be
-   a primitive, and it now composes .btn .btn--secondary rather than
-   declaring its own chrome. */
+   The vocabulary this file was once told not to invent now exists,
+   extracted from the pages that were designed: see components.css. Both
+   buttons in the header compose .btn .btn--secondary rather than
+   declaring their own chrome, and the focus ring is global, in base.css.
+
+   Still deferred on purpose, each its own spec: a spacing scale, and a
+   manual theme toggle. */
 
 /* Hidden by .visually-hidden (further down, and reused rather than
    duplicated) until focused; this undoes that hiding and puts the link
@@ -43,24 +48,28 @@
 }
 
 /* The header stacks at narrow widths, and each row it wraps onto costs
-   about 39px. Measured at 360px it is three rows -- brand, nav, user --
-   and 138px tall, which puts the <h1> a third of a phone screen down.
+   about 39px. It used to be three rows on a phone -- brand, nav, user,
+   126px tall, with the <h1> starting 166px down at 360px.
 
-   Two of those rows can be merged only by moving the nav visually below
-   the user block, and that is not done here: the DOM order is brand,
-   nav, user, so reordering would send the tab sequence top-left, down to
-   the bottom row, then back up to Log out. The frame is careful about
-   focus everywhere else and should not buy 39px with it. Merging them
-   honestly needs the collapsible nav this project has deferred.
+   Those rows could be merged by moving the nav visually below the user
+   block, and that is still not done here: the DOM order is brand, nav,
+   user, so reordering would send the tab sequence top-left, down to the
+   bottom row, then back up to Log out. The frame is careful about focus
+   everywhere else and should not buy 39px with it. The nav collapses
+   behind a Menu button instead -- see the block further down -- and that
+   is what took the phone header to two rows and the <h1> to 132px.
 
-   What is safe is the rhythm. The 24px column gap is generous for a
-   phone: at 414px it alone is what pushes the nav (271px) past the brand
-   (95px) onto its own row, so halving it buys back a whole row there.
-   Below that the three rows remain, but tighter -- 8px between them, and
-   less air under the rule -- which is worth about 20px on every page.
+   This block is the rhythm, and it still earns its place above the
+   collapse. The 24px column gap is generous for a phone: at 414px, the
+   first width where the full nav does fit beside the brand, that gap
+   alone is what would push it onto its own row -- so halving it is what
+   keeps 414 at two rows instead of three, on the far side of the
+   breakpoint where no toggle exists to help. Below that the rows are
+   tighter -- 8px between them, and less air under the rule -- which is
+   worth about 20px on every page.
 
    Nothing above 480px is touched: the header is a single 61px row from
-   700px up and already correct. */
+   689px up for every role, and already correct. */
 @media (max-width: 480px) {
   .app-header {
     gap: 8px 12px;
@@ -109,6 +118,114 @@
   font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 4px;
+}
+
+/* --- The Menu button, and the panel it opens -------------------------
+
+   Measured on the header as it was, with each role's real link list and
+   a 16-character user name:
+
+     role       nav     three rows at   one row from
+     admin     263px     <= 402px          677px
+     faculty   274px     <= 413px          689px
+     student   112px      never            526px
+
+   413 is the number, and it comes from faculty rather than admin: "Take
+   Attendance / Attendance History" is 11px wider than the three-item
+   admin list, so the widest role is not the one with the most links.
+   414px is where the full nav first fits beside the brand (32 padding +
+   95 brand + 12 gap + 274 nav = 413), and it is also a real device
+   width, so the phones that keep the full nav are the ones with room
+   for it. At 360px the fix is 125.5px of header down to 108.2, and the
+   <h1> from 166px down the screen to 148.
+
+   One number for all three roles, deliberately: navigation.js decides
+   what is listed, never what the frame looks like, and two people at the
+   same viewport should not meet two different headers. **That number
+   costs admin the band 402-413**, where its shorter nav had already
+   stopped wrapping and the collapse makes the header taller instead:
+   91.4 to 108.2, and 412px is a real phone. It is still the better of
+   the two available numbers -- taking 402 from admin instead would leave
+   faculty at three rows and 125.5px across that same band, so 413 trades
+   17px of admin's header for 17px AND a whole row of faculty's, and no
+   role is left with the defect this block exists to fix.
+
+   What does vary is whether a nav collapses at all, and that is decided
+   by the number of destinations rather than by the role. A single link
+   stays a link (see .app-nav--single below): the Menu button is 44px
+   tall -- 16px of .btn padding around the 26.1px line-height every
+   element in this app inherits from `font: 18px/145%` -- where the row
+   of text links it replaces is 26px. Collapsing a one-item nav therefore
+   makes the header TALLER than leaving it alone, 108.2 against 91.4 at
+   360px, and hides the link as well; there is no row to win back,
+   because one link never wrapped. Student is that nav today, and its
+   header is unchanged from before this block existed at all twenty
+   widths measured. Give the role a second destination and it collapses
+   like the other two.
+
+   Two rows and not one: brand + Menu + user comes to 399px against the
+   328px content box at 360px, so the user block still wraps. Getting to
+   one row means letting the header shrink the name rather than wrap it,
+   and at 320px that leaves about four characters of it -- a worse header
+   than the row it buys. */
+.app-nav-toggle {
+  display: none;
+}
+
+@media (max-width: 413px) {
+  .app-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* display:none, not visibility or opacity: a closed panel has to be
+     out of the tab order, not merely out of sight. */
+  .app-nav ul {
+    display: none;
+  }
+
+  /* A column, because a row of links is exactly what did not fit. The
+     links keep the type, hover and .is-current underline they have
+     above -- only the arrangement changes. */
+  .app-nav--open ul {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  /* An open panel makes the nav the tallest thing on its row, and the
+     header centres its children -- which left the brand floating at the
+     vertical middle of an open menu, beside nothing. Only while open,
+     and only at this width: closed, centring a 26px brand against the
+     44px button is right, which is why this is not simply set on
+     .app-header here. */
+  .app-header:has(.app-nav--open) {
+    align-items: flex-start;
+  }
+
+  /* The one-destination nav, which renders no toggle and so must not be
+     hidden by the rule above -- see the count argument in the comment
+     over this block. It keeps the wrapping row and 16px gap it has at
+     every other width, so this role's header is what it always was. */
+  .app-nav--single ul {
+    display: flex;
+  }
+}
+
+/* The touch-target floor, kept separate from the collapse on purpose.
+   The three admin pages pair their coarse-pointer rules with a width
+   (`@media (max-width: 480px), (pointer: coarse)`), which is right for
+   what they do: widen a control that is cramped either way. The same
+   shape here would collapse the nav on any touch screen, a 1280px one
+   included -- and a layout that size is not a pointer's decision to
+   make. So the collapse stays width-only, and only the target grows. */
+@media (pointer: coarse) {
+  .app-nav-toggle {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 .app-user {
