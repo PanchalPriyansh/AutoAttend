@@ -21,6 +21,15 @@ numpy>=1.26
 # Ships as a prebuilt wheel on Windows, unlike dlib -- no toolchain needed.
 opencv-python>=4.8,<5.0
 
+# PDF export of a class's attendance. Pure Python with no native build --
+# unlike WeasyPrint, which would need cairo/Pango as system libraries and
+# repeat the dlib problem on Windows. Imported lazily in
+# attendance/pdf_export.py and nowhere else, so a server without it still
+# starts, still serves every other route, and still exports CSV; only the
+# PDF endpoint reports 503. The CSV half of that feature adds nothing at
+# all -- stdlib `csv` writes it.
+reportlab>=4.0,<5.0
+
 # Low-attendance notifications add NO dependency, deliberately. The mailer
 # is stdlib `smtplib` + `email.message` (see notifications/mailer.py), which
 # is what CLAUDE.md's tech constraints call for. There is no mail framework,

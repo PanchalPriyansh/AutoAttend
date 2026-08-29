@@ -83,6 +83,51 @@ endpoints ("APIs" + "Backend" + "Definition of done"):
     `student_id`-is-never-read coverage above is unmodified by this
     feature and is not repeated here.
 
+Also covers 21-attendance-export.md's two additions to this blueprint
+("APIs" + "Rules for implementation" + "Definition of done"). This is
+route/integration-level coverage only -- `attendance/csv_export.py`,
+`attendance/pdf_export.py`, and `attendance/export_naming.py` each have
+their own pure-unit test file (header/BOM/CRLF/formula-guard, title
+block/student table/marker/lecture index/pagination/font substitution,
+and the slug/whitelist respectively) and none of that is repeated here:
+  - `GET /api/attendance/export/csv` and `GET /api/attendance/export/pdf`
+    are both faculty-owner-only, exactly like the four history endpoints
+    above: a student, an admin, and an unauthenticated caller are
+    rejected; a faculty member who does not hold the class, or holds an
+    unassigned one, gets `403`; an unknown class id gets `404` -- on both
+    endpoints, and never with a byte of file in the body.
+  - Neither endpoint reads a student id from anywhere; both are addressed
+    by class only.
+  - An inclusive `from`/`to` selects the same sessions
+    `GET /api/attendance/sessions` selects for the same bounds, on both
+    endpoints, with a session on either bound included.
+  - A `to` earlier than `from`, a malformed date, and a malformed
+    `class_id` are each `400` with a JSON `{"error": ...}` body and no
+    file, on both endpoints; a range over `MAX_EXPORT_SESSIONS` is `400`
+    naming the count, on both.
+  - An empty range is `200`, never `404` -- a header-only CSV and a
+    complete PDF saying nothing was recorded.
+  - Both responses carry `Cache-Control: no-store` and a
+    `Content-Disposition: attachment` header built from
+    `export_naming.py`'s whitelist, verified end-to-end against a class
+    name carrying quotes, a CR/LF, and non-ASCII text.
+  - The CSV body reflects what was actually stored -- header line, BOM,
+    `\r\n`, explicit absences, date-then-name ordering, and each row's own
+    `marked_by`/`source` -- read back through the database fakes rather
+    than handed to the writer directly, which the unit test does.
+  - The PDF body reflects the same round trip: the hierarchy names in the
+    title block, a student's `Total` as their own record count (two
+    students, two different totals), the roster/records union (an
+    enrolled student with nothing recorded, and a once-enrolled student
+    who still holds a record), the `below N%` marker against a configured
+    bar and its absence when the bar is misconfigured, and the lecture
+    index.
+  - With `reportlab` unimportable, the PDF endpoint is `503` while the CSV
+    endpoint still answers `200` for the same data and `/api/health`
+    still responds. Both endpoints answer normally with
+    `face_recognition`/`cv2` unavailable -- neither export touches either
+    library.
+
 `routes.auth.get_db` and `routes.attendance.get_db` are monkeypatched to
 the same in-memory fake db (attendance_test_helpers.py) so a real
 `/api/auth/login` call mints genuine JWT + CSRF cookies while the
@@ -93,7 +138,11 @@ installed, and no real image/video/biometric data is used anywhere --
 every "capture" is a short block of synthetic bytes.
 """
 
+import base64
+import csv
 import io
+import re
+import zlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -116,6 +165,8 @@ from attendance_test_helpers import (
 )
 from bson import ObjectId
 
+from attendance.pdf_export import EMPTY_RANGE_NOTE, NO_FIGURE
+from attendance.validators import MAX_EXPORT_SESSIONS
 from config import Config
 from database.schema import ATTENDANCE_RECORDS, ATTENDANCE_SESSIONS
 from recognition.errors import ImageDecodeError, VideoDecodeError
@@ -3159,3 +3210,850 @@ class TestStudentDashboardHasNoCvDependency:
 
         assert overview.status_code == 200
         assert detail.status_code == 200
+
+
+# =============================================================================
+# Attendance export -- CSV and PDF (21-attendance-export.md)
+# =============================================================================
+#
+# Route/integration-level coverage only. attendance/csv_export.py,
+# attendance/pdf_export.py, and attendance/export_naming.py each have a
+# dedicated pure-unit test file (header/BOM/CRLF/formula-guard, title
+# block/student table/marker/lecture index/pagination/font substitution,
+# and the slug/whitelist respectively); none of that is repeated below.
+# What is exercised here is the part those files cannot see: role and
+# ownership enforcement, query-string validation, the session cap, the
+# `list_sessions`-matching date filter, the response headers, and the
+# database-fake round trip -- real stored documents in, real bytes out.
+
+
+def _export_csv(client, class_id, headers=None, *, query=""):
+    suffix = f"&{query}" if query else ""
+    return client.get(
+        f"/api/attendance/export/csv?class_id={class_id}{suffix}", headers=headers or {}
+    )
+
+
+def _export_pdf(client, class_id, headers=None, *, query=""):
+    suffix = f"&{query}" if query else ""
+    return client.get(
+        f"/api/attendance/export/pdf?class_id={class_id}{suffix}", headers=headers or {}
+    )
+
+
+def _export_requests(client, class_id, headers, *, query=""):
+    """One CSV and one PDF request for the same class/query -- the export
+    counterpart of `_all_four_endpoint_requests` /
+    `_all_history_endpoint_requests`: both endpoints share one owner check
+    and one date-range rule (rule 4), so most cases are asserted on both
+    at once rather than twice.
+    """
+    return [
+        _export_csv(client, class_id, headers, query=query),
+        _export_pdf(client, class_id, headers, query=query),
+    ]
+
+
+def _both_export_endpoint_requests(client, headers):
+    """A dummy class id is fine here, the same way it is for the other
+    `_all_*_endpoint_requests` helpers: role_required short-circuits
+    before any id is resolved.
+    """
+    return _export_requests(client, str(ObjectId()), headers)
+
+
+def _csv_rows(response):
+    """The data rows of a CSV export response, header stripped, decoded
+    through the same `utf-8-sig` the writer encodes with.
+
+    `newline=""` on the StringIO is what lets `csv.reader` see the raw
+    `\\r\\n` line endings itself rather than have them pre-translated away,
+    which is the behaviour the csv module itself asks callers for.
+    """
+    text = response.data.decode("utf-8-sig")
+    rows = [row for row in csv.reader(io.StringIO(text, newline="")) if row]
+    return rows[1:]
+
+
+# --- Reading a rendered PDF response ------------------------------------
+#
+# Mirrors test_attendance_pdf_export.py's `pdf_text` helper exactly (same
+# Flate/ASCII85 unwrap, same PDF string-escape handling, same cp1252
+# decode) -- duplicated rather than imported across test files because
+# this one is reading a real HTTP response body, not a fixture the unit
+# test built by calling render_report() directly, and the two files should
+# not depend on each other's internals.
+
+_PDF_ESCAPE = re.compile(rb"\\(?:([0-7]{1,3})|(.))", re.S)
+_PDF_NAMED_ESCAPES = {
+    b"n": b"\n", b"r": b"\r", b"t": b"\t", b"b": b"\b", b"f": b"\f",
+}
+
+
+def _pdf_unescape(raw):
+    def replace(match):
+        octal, character = match.groups()
+        if octal is not None:
+            return bytes([int(octal, 8) & 0xFF])
+        return _PDF_NAMED_ESCAPES.get(character, character)
+
+    return _PDF_ESCAPE.sub(replace, raw)
+
+
+def _pdf_text(payload):
+    """Every string drawn in a rendered PDF, joined, in page order."""
+    chunks = []
+    for match in re.finditer(rb"stream\r?\n(.*?)endstream", payload, re.S):
+        raw = match.group(1).strip()
+        try:
+            raw = base64.a85decode(raw, adobe=True)
+        except ValueError:
+            pass
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error:
+            pass
+        chunks.extend(
+            _pdf_unescape(token[1:-1])
+            for token in re.findall(rb"\((?:\\.|[^\\()])*\)", raw)
+        )
+
+    return " ".join(chunk.decode("cp1252", "replace") for chunk in chunks)
+
+
+# --- Role enforcement -----------------------------------------------------
+
+
+class TestExportRoleEnforcement:
+    def test_student_receives_403_on_both_export_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "student")
+
+            responses = _both_export_endpoint_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_admin_receives_403_on_both_export_endpoints(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "admin")
+
+            responses = _both_export_endpoint_requests(client, headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_unauthenticated_receives_401_on_both_export_endpoints(self, app_instance, monkeypatch):
+        fake_db = make_fake_attendance_db()
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            responses = _both_export_endpoint_requests(client, headers={})
+
+        assert all(r.status_code == 401 for r in responses), [r.status_code for r in responses]
+        for response in responses:
+            assert response.mimetype == "application/json"
+            assert "Content-Disposition" not in response.headers
+
+
+# --- Ownership --------------------------------------------------------------
+
+
+class TestExportOwnership:
+    def test_a_class_assigned_to_someone_else_returns_403_on_both(self, app_instance, monkeypatch):
+        klass = make_class(ObjectId(), faculty_id=ObjectId())
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty", classes=[klass])
+
+            responses = _export_requests(client, klass["_id"], headers)
+
+        for response in responses:
+            assert response.status_code == 403
+            assert "error" in response.get_json()
+            assert "Content-Disposition" not in response.headers
+
+    def test_an_unassigned_class_returns_403_not_500_on_both(self, app_instance, monkeypatch):
+        klass = make_class(ObjectId(), faculty_id=None)
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty", classes=[klass])
+
+            responses = _export_requests(client, klass["_id"], headers)
+
+        assert all(r.status_code == 403 for r in responses), [r.status_code for r in responses]
+
+    def test_a_nonexistent_class_returns_404_on_both(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            responses = _export_requests(client, str(ObjectId()), headers)
+
+        for response in responses:
+            assert response.status_code == 404
+            assert "error" in response.get_json()
+
+
+# --- No student id is ever read --------------------------------------------
+
+
+class TestExportNoStudentIdIsEverAccepted:
+    def test_a_student_id_query_param_does_not_change_the_csv_export(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            baseline = _export_csv(client, klass["_id"], headers).data
+            spoofed = _export_csv(
+                client, klass["_id"], headers, query=f"student_id={ObjectId()}"
+            ).data
+
+        assert spoofed == baseline
+
+    def test_a_student_id_query_param_does_not_change_the_pdf_export(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            # Compared as decoded text rather than raw bytes: reportlab may
+            # embed a fresh internal id in each render even when nothing
+            # about the content differs.
+            baseline = _pdf_text(_export_pdf(client, klass["_id"], headers).data)
+            spoofed = _pdf_text(
+                _export_pdf(client, klass["_id"], headers, query=f"student_id={ObjectId()}").data
+            )
+
+        assert spoofed == baseline
+
+
+# --- Validation errors: 400, JSON, no file ----------------------------------
+
+
+class TestExportValidationErrors:
+    def test_a_to_earlier_than_from_returns_400_json_and_no_file_on_both(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            responses = _export_requests(
+                client, klass["_id"], headers, query="from=2020-02-01&to=2020-01-01",
+            )
+
+        for response in responses:
+            assert response.status_code == 400
+            assert "error" in response.get_json()
+            assert not response.data.startswith(b"%PDF-")
+            assert b"date,student_name" not in response.data
+
+    def test_a_malformed_date_returns_400_on_both(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            responses = _export_requests(client, klass["_id"], headers, query="from=not-a-date")
+
+        for response in responses:
+            assert response.status_code == 400
+            assert "error" in response.get_json()
+
+    def test_a_malformed_class_id_returns_400_on_both(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "faculty")
+
+            responses = _export_requests(client, "not-a-valid-id", headers)
+
+        for response in responses:
+            assert response.status_code == 400
+            assert "error" in response.get_json()
+
+
+# --- The session cap: refused, never trimmed --------------------------------
+
+
+class TestExportSessionCap:
+    def test_a_range_over_the_cap_returns_400_naming_the_count_on_both(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        over_the_cap = MAX_EXPORT_SESSIONS + 1
+        pairs = [
+            make_session_with_records(
+                klass["_id"], students,
+                date=datetime(2020, 1, 1, tzinfo=timezone.utc) + timedelta(days=i),
+            )
+            for i in range(over_the_cap)
+        ]
+        sessions = [pair[0] for pair in pairs]
+        records = [record for pair in pairs for record in pair[1]]
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=sessions, attendance_records=records,
+            )
+
+            responses = _export_requests(client, klass["_id"], headers)
+
+        for response in responses:
+            assert response.status_code == 400
+            assert str(over_the_cap) in response.get_json()["error"]
+
+
+# --- Date-range filtering matches GET /api/attendance/sessions -------------
+
+
+class TestExportDateRangeFiltering:
+    def _three_sessions(self, klass, students):
+        jan1, jan1_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        jan15, jan15_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 15, tzinfo=timezone.utc),
+        )
+        jan31, jan31_records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 31, tzinfo=timezone.utc),
+        )
+        sessions = [jan1, jan15, jan31]
+        records = jan1_records + jan15_records + jan31_records
+        return sessions, records, jan1, jan15, jan31
+
+    def test_the_csv_range_matches_list_sessions_for_the_same_bounds_bounds_included(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        sessions, records, jan1, jan15, jan31 = self._three_sessions(klass, students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=sessions, attendance_records=records,
+            )
+
+            list_response = _list_sessions(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-01-15",
+            )
+            csv_response = _export_csv(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-01-15",
+            )
+
+        expected_ids = {s["id"] for s in list_response.get_json()["sessions"]}
+        assert expected_ids == {str(jan1["_id"]), str(jan15["_id"])}
+
+        dates_in_csv = {row[0] for row in _csv_rows(csv_response)}
+        assert dates_in_csv == {"2020-01-01", "2020-01-15"}
+        assert "2020-01-31" not in dates_in_csv
+
+    def test_the_pdf_range_matches_list_sessions_for_the_same_bounds_bounds_included(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        sessions, records, jan1, jan15, jan31 = self._three_sessions(klass, students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=sessions, attendance_records=records,
+            )
+
+            pdf_response = _export_pdf(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-01-15",
+            )
+
+        text = _pdf_text(pdf_response.data)
+        assert "2 lectures recorded" in text
+        assert "2020-01-01" in text
+        assert "2020-01-15" in text
+        assert "2020-01-31" not in text
+
+
+# --- Empty range: 200, never 404 --------------------------------------------
+
+
+class TestExportEmptyRange:
+    def test_csv_empty_range_returns_200_with_a_header_only_file(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _export_csv(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        assert _csv_rows(response) == []
+        assert response.data.decode("utf-8-sig").rstrip("\r\n") == (
+            "date,student_name,student_email,status,marked_by,source"
+        )
+
+    def test_pdf_empty_range_returns_200_with_a_complete_document_saying_so(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        assert response.data.startswith(b"%PDF-")
+        assert EMPTY_RANGE_NOTE in _pdf_text(response.data)
+
+
+# --- Response headers --------------------------------------------------------
+
+
+class TestExportResponseHeaders:
+    def test_both_responses_carry_no_store_and_the_documented_content_type(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            csv_response = _export_csv(client, klass["_id"], headers)
+            pdf_response = _export_pdf(client, klass["_id"], headers)
+
+        assert csv_response.headers["Content-Type"] == "text/csv; charset=utf-8"
+        assert csv_response.headers["Cache-Control"] == "no-store"
+        assert csv_response.headers["Content-Disposition"].startswith("attachment;")
+        assert csv_response.headers["Content-Disposition"].endswith('.csv"')
+
+        assert pdf_response.headers["Content-Type"] == "application/pdf"
+        assert pdf_response.headers["Cache-Control"] == "no-store"
+        assert pdf_response.headers["Content-Disposition"].startswith("attachment;")
+        assert pdf_response.headers["Content-Disposition"].endswith('.pdf"')
+
+    def test_filename_names_the_range_when_both_bounds_are_given(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(
+            klass["_id"], students, date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_csv(
+                client, klass["_id"], headers, query="from=2020-01-01&to=2020-01-31",
+            )
+
+        # klass's default name is "Section A" (academic_test_helpers.py).
+        assert (
+            'filename="attendance-section-a-2020-01-01-to-2020-01-31.csv"'
+            in response.headers["Content-Disposition"]
+        )
+
+    def test_the_filename_whitelist_holds_end_to_end_for_a_hostile_class_name(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        klass["name"] = 'CS "3A"\r\nX-Injected: 1 · Déjà Vü'
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            responses = _export_requests(client, klass["_id"], headers)
+
+        for response, extension in zip(responses, ("csv", "pdf")):
+            disposition = response.headers["Content-Disposition"]
+            assert "\r" not in disposition
+            assert "\n" not in disposition
+            assert disposition.count('"') == 2
+            filename = disposition.split('filename="', 1)[1].rstrip('"')
+            assert re.fullmatch(rf"[a-z0-9-]+\.{extension}", filename), filename
+
+
+# --- CSV body: read back through the database fake --------------------------
+
+
+class TestCsvExportBody:
+    def test_absences_are_written_as_their_own_explicit_rows(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "absent"],
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_csv(client, klass["_id"], headers)
+
+        rows = _csv_rows(response)
+        assert len(rows) == 2
+        statuses = {row[3] for row in rows}
+        assert statuses == {"present", "absent"}
+
+    def test_marked_by_and_source_travel_with_each_row(self, app_instance, monkeypatch):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present"], marked_by=["faculty"], source="video",
+            date=datetime(2020, 3, 4, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_csv(client, klass["_id"], headers)
+
+        row = _csv_rows(response)[0]
+        assert row[0] == "2020-03-04"
+        assert row[2] == students[0]["email"]
+        assert row[3] == "present"
+        assert row[4] == "faculty"
+        assert row[5] == "video"
+
+    def test_rows_are_ordered_by_date_ascending_then_student_name_case_insensitively(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        bob = make_user(name="bob lower", email=f"bob-{ObjectId()}@college.test", role="student")
+        alice = make_user(name="Alice Upper", email=f"alice-{ObjectId()}@college.test", role="student")
+        enrollments = [
+            make_class_enrollment(klass["_id"], bob["_id"]),
+            make_class_enrollment(klass["_id"], alice["_id"]),
+        ]
+        earlier, earlier_records = make_session_with_records(
+            klass["_id"], [bob, alice], statuses=["present", "present"],
+            date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        later, later_records = make_session_with_records(
+            klass["_id"], [bob, alice], statuses=["present", "present"],
+            date=datetime(2020, 1, 2, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=[bob, alice], enrollments=enrollments,
+                attendance_sessions=[earlier, later], attendance_records=earlier_records + later_records,
+            )
+
+            response = _export_csv(client, klass["_id"], headers)
+
+        rows = _csv_rows(response)
+        assert [(row[0], row[1]) for row in rows] == [
+            ("2020-01-01", "Alice Upper"),
+            ("2020-01-01", "bob lower"),
+            ("2020-01-02", "Alice Upper"),
+            ("2020-01-02", "bob lower"),
+        ]
+
+
+# --- PDF body: read back through the database fake ---------------------------
+
+
+class TestPdfExportBody:
+    def test_title_block_names_the_hierarchy_the_class_and_the_course(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, hierarchy = _build_class_with_hierarchy(
+            class_name="CS-3A", course_name="Data Structures",
+            semester_name="Semester 3", department_name="Computer Engineering",
+            institute_name="Sri Institute", faculty_id=faculty_id,
+        )
+        student = _make_student()
+        enrollment = make_class_enrollment(klass["_id"], student["_id"])
+        session, records = make_session_with_records(klass["_id"], [student], statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=[student], enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=records, **hierarchy,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert "ATTENDANCE REPORT" in text
+        assert "Sri Institute" in text
+        assert "Computer Engineering" in text
+        assert "Semester 3" in text
+        assert "Data Structures" in text
+        assert "CS-3A" in text
+
+
+class TestPdfExportStudentTotals:
+    def test_two_students_in_the_same_class_have_different_totals_from_their_own_records(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        long_timer = make_user(
+            name="Aarti Desai", email=f"aarti-{ObjectId()}@college.test", role="student",
+        )
+        late_joiner = make_user(
+            name="Late Joiner", email=f"late-{ObjectId()}@college.test", role="student",
+        )
+        enrollments = [
+            make_class_enrollment(klass["_id"], long_timer["_id"]),
+            make_class_enrollment(klass["_id"], late_joiner["_id"]),
+        ]
+        first, first_records = make_session_with_records(
+            klass["_id"], [long_timer], statuses=["present"],
+            date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        second, second_records = make_session_with_records(
+            klass["_id"], [long_timer, late_joiner], statuses=["present", "present"],
+            date=datetime(2020, 1, 2, tzinfo=timezone.utc),
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass,
+                students=[long_timer, late_joiner], enrollments=enrollments,
+                attendance_sessions=[first, second],
+                attendance_records=first_records + second_records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert "Aarti Desai 2 0 2 100%" in text
+        assert "Late Joiner 1 0 1 100%" in text
+
+
+class TestPdfExportRosterUnion:
+    def test_an_enrolled_student_with_no_records_appears_at_zero_with_a_dash(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        attended = make_user(
+            name="Aarti Desai", email=f"aarti-{ObjectId()}@college.test", role="student",
+        )
+        never_recorded = make_user(
+            name="Never Recorded", email=f"never-{ObjectId()}@college.test", role="student",
+        )
+        enrollments = [
+            make_class_enrollment(klass["_id"], attended["_id"]),
+            make_class_enrollment(klass["_id"], never_recorded["_id"]),
+        ]
+        session, records = make_session_with_records(klass["_id"], [attended], statuses=["present"])
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass,
+                students=[attended, never_recorded], enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert f"Never Recorded 0 0 0 {NO_FIGURE}" in text
+
+    def test_a_student_with_records_but_no_longer_enrolled_still_appears(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        still_enrolled = make_user(
+            name="Aarti Desai", email=f"aarti-{ObjectId()}@college.test", role="student",
+        )
+        left_the_class = make_user(
+            name="Older Student", email=f"older-{ObjectId()}@college.test", role="student",
+        )
+        # `left_the_class` holds a record but is deliberately given no
+        # class_enrollments row -- the "unenrolled mid-term" case rule 9's
+        # second paragraph names.
+        enrollment = make_class_enrollment(klass["_id"], still_enrolled["_id"])
+        session, records = make_session_with_records(
+            klass["_id"], [still_enrolled, left_the_class], statuses=["present", "absent"],
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass,
+                students=[still_enrolled, left_the_class], enrollments=[enrollment],
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert "Older Student 0 1 1 0%" in text
+
+
+class TestPdfExportThresholdMarker:
+    def test_students_below_the_bar_are_marked_and_the_bar_is_stated(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass = make_class(ObjectId(), faculty_id=faculty_id)
+        strong = make_user(
+            name="Aarti Desai", email=f"aarti-{ObjectId()}@college.test", role="student",
+        )
+        weak = make_user(
+            name="Rohit Nair", email=f"rohit-{ObjectId()}@college.test", role="student",
+        )
+        enrollments = [
+            make_class_enrollment(klass["_id"], strong["_id"]),
+            make_class_enrollment(klass["_id"], weak["_id"]),
+        ]
+        sessions = [
+            make_attendance_session(klass["_id"], date=datetime(2020, 1, day, tzinfo=timezone.utc))
+            for day in range(1, 5)
+        ]
+        records = [
+            make_attendance_record(session["_id"], klass["_id"], strong["_id"], status="present")
+            for session in sessions
+        ] + [
+            make_attendance_record(
+                session["_id"], klass["_id"], weak["_id"],
+                status="present" if index == 0 else "absent",
+            )
+            for index, session in enumerate(sessions)
+        ]
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", 75.0)
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass,
+                students=[strong, weak], enrollments=enrollments,
+                attendance_sessions=sessions, attendance_records=records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert "required attendance 75%" in text
+        # Exactly one row (the weak student's) is marked -- if the strong
+        # student's had leaked a marker too this would be 2.
+        assert text.count("below 75%") == 1
+        assert "Rohit Nair" in text
+
+    @pytest.mark.parametrize("bad_value", [0, -5, 150, "not-a-number", True])
+    def test_a_misconfigured_threshold_degrades_to_no_marker_and_returns_200(
+        self, app_instance, monkeypatch, bad_value
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students, statuses=["absent"])
+        with app_instance.test_client() as client:
+            monkeypatch.setattr(Config, "LOW_ATTENDANCE_THRESHOLD", bad_value)
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        assert response.status_code == 200
+        text = _pdf_text(response.data)
+        assert "below" not in text.lower()
+        assert "required attendance" not in text
+
+
+class TestPdfExportLectureIndex:
+    def test_lists_every_session_with_its_date_source_and_present_over_total(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=2)
+        session, records = make_session_with_records(
+            klass["_id"], students, statuses=["present", "absent"],
+            date=datetime(2020, 6, 1, tzinfo=timezone.utc), source="video",
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+
+            response = _export_pdf(client, klass["_id"], headers)
+
+        text = _pdf_text(response.data)
+        assert "2020-06-01" in text
+        assert "video" in text
+        assert "1 / 2" in text
+
+
+# --- The PDF's optional dependency ------------------------------------------
+
+
+class TestExportUnavailablePdf:
+    def test_reportlab_unavailable_returns_503_while_csv_still_returns_200_and_health_responds(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+            monkeypatch.setattr("attendance.pdf_export.is_available", lambda: False)
+
+            pdf_response = _export_pdf(client, klass["_id"], headers)
+            csv_response = _export_csv(client, klass["_id"], headers)
+
+        assert pdf_response.status_code == 503
+        assert "error" in pdf_response.get_json()
+        assert csv_response.status_code == 200
+
+        monkeypatch.setattr("routes.health.get_db_status", lambda: {"connected": True})
+        with app_instance.test_client() as client:
+            health = client.get("/api/health")
+
+        assert health.status_code == 200
+
+
+# --- No CV dependency on either export path ----------------------------------
+
+
+class TestExportHasNoCvDependency:
+    def test_both_export_endpoints_work_with_face_recognition_and_cv2_unavailable(
+        self, app_instance, monkeypatch
+    ):
+        faculty_id = ObjectId()
+        klass, students, enrollments = build_owned_class_with_roster(faculty_id, student_count=1)
+        session, records = make_session_with_records(klass["_id"], students)
+        with app_instance.test_client() as client:
+            _, headers = _login_as_owner(
+                monkeypatch, client, klass, students=students, enrollments=enrollments,
+                attendance_sessions=[session], attendance_records=records,
+            )
+            _stub_recognition(monkeypatch, recognition_available=False, video_available=False)
+
+            responses = _export_requests(client, klass["_id"], headers)
+
+        assert all(r.status_code == 200 for r in responses), [r.status_code for r in responses]

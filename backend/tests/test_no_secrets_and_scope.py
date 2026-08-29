@@ -358,3 +358,94 @@ class TestEnvExampleFilesAndGitignore:
 
         assert ".env" in content
         assert ".env.example" in content
+
+
+class TestPdfLibraryImportIsolation:
+    """21-attendance-export.md, "Rules for implementation" 16 +
+    Definition of done -> "Backend -- PDF" 27: "reportlab is imported in
+    pdf_export.py and nowhere else, lazily, inside the function."
+
+    The third of these, after face_recognition/numpy and cv2, and it
+    guards the same property for the same reason: a module-level import
+    would put the library on the import path of every request the
+    attendance blueprint serves, and would make `import app` fail on a
+    machine that does not have it -- taking the whole API down over one
+    endpoint. Lazy and confined is what lets the app start, serve every
+    other route, and still export CSV where reportlab is missing, with
+    only the PDF endpoint reporting 503.
+
+    Unlike dlib, reportlab is pure Python and installs anywhere, so this
+    is not about a build that might fail. It is about one feature's
+    dependency staying one feature's dependency.
+    """
+
+    PDF_EXPORT_PATH = os.path.join(BACKEND_DIR, "attendance", "pdf_export.py")
+    IMPORT_PATTERN = re.compile(r"^(\s*)(?:import|from)\s+reportlab\b")
+
+    def test_reportlab_is_only_imported_in_pdf_export_py(self):
+        offenders = []
+        for path in _iter_backend_python_files():
+            if os.path.normpath(path) == os.path.normpath(self.PDF_EXPORT_PATH):
+                continue
+            with open(path, "r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if self.IMPORT_PATTERN.match(line):
+                        offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+        assert not offenders, (
+            f"reportlab imported outside attendance/pdf_export.py: {offenders}"
+        )
+
+    def test_every_reportlab_import_in_pdf_export_py_is_indented(self):
+        """Indentation is the check because it is what "inside a function"
+        looks like to a plain source scan -- the same shape encoder.py and
+        frames.py keep their optional imports in.
+        """
+        unindented = []
+        with open(self.PDF_EXPORT_PATH, "r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                match = self.IMPORT_PATTERN.match(line)
+                if match and not match.group(1):
+                    unindented.append(f"{line_number}: {line.strip()}")
+
+        assert not unindented, (
+            "reportlab must be imported inside a function in pdf_export.py, "
+            f"not at module scope: {unindented}"
+        )
+
+    def test_importing_the_module_does_not_import_the_library(self):
+        """The behavioural half of the two source scans above.
+
+        `attendance.pdf_export` is force-reloaded rather than fetched from
+        the module cache -- a cached import executes nothing, so the
+        obvious version of this test passes even against a module-level
+        import. Both it and any `reportlab` entries are removed first and
+        restored afterwards, so the rest of the suite is unaffected.
+        """
+        import importlib
+        import sys
+
+        def reportlab_modules():
+            return [
+                name
+                for name in list(sys.modules)
+                if name == "reportlab" or name.startswith("reportlab.")
+            ]
+
+        saved = {name: sys.modules[name] for name in reportlab_modules()}
+        saved_self = sys.modules.pop("attendance.pdf_export", None)
+        for name in saved:
+            del sys.modules[name]
+
+        try:
+            module = importlib.import_module("attendance.pdf_export")
+
+            assert module.is_available is not None
+            assert not reportlab_modules(), (
+                "importing attendance.pdf_export pulled reportlab in with it; "
+                "the import must be inside the function that needs it"
+            )
+        finally:
+            sys.modules.update(saved)
+            if saved_self is not None:
+                sys.modules["attendance.pdf_export"] = saved_self

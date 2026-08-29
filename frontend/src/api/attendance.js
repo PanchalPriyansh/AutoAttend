@@ -1,4 +1,4 @@
-import { requestJson as request } from './client'
+import { apiFetch, requestJson as request } from './client'
 
 /**
  * Client for the attendance API — the faculty capture and history screens,
@@ -102,6 +102,57 @@ export function deleteAttendanceSession(sessionId) {
   return request(`/api/attendance/sessions/${encodeURIComponent(sessionId)}`, {
     method: 'DELETE',
   })
+}
+
+/**
+ * The filename the server chose, read from Content-Disposition.
+ *
+ * The backend builds that name from an [a-z0-9-] whitelist, so the quoted
+ * form is the only one it can send and nothing exotic needs parsing. The
+ * fallback is for the case where the header does not survive — a proxy
+ * that strips it, say — because a download named "download" is a worse
+ * outcome than one named for the class it holds.
+ */
+function filenameFromResponse(response, fallback) {
+  const header = response.headers.get('Content-Disposition') || ''
+  const match = header.match(/filename="([^"]+)"/)
+
+  return match ? match[1] : fallback
+}
+
+/**
+ * Download one class's attendance over an optional inclusive date range.
+ * `format` is 'csv' (the register: a row per student per lecture) or
+ * 'pdf' (the report: a row per student, plus a lecture index).
+ *
+ * Resolves to `{ blob, filename }` — the caller saves it, so the download
+ * and the "did it work" message stay on the page rather than in the
+ * browser's chrome.
+ *
+ * Built on apiFetch rather than requestJson because the success body is a
+ * file, not JSON. Everything else about the contract is deliberately the
+ * same: a non-OK response throws an Error carrying the backend's own
+ * message and `.status`, so a 403 on a class no longer held and the PDF's
+ * 503 both surface the way every other failure on the page does.
+ */
+export async function downloadAttendanceExport(classId, { from, to, format } = {}) {
+  const query = new URLSearchParams({ class_id: classId })
+  if (from) query.set('from', from)
+  if (to) query.set('to', to)
+
+  const response = await apiFetch(`/api/attendance/export/${format}?${query}`)
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const error = new Error(data.error || 'The export could not be produced')
+    error.status = response.status
+    throw error
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFromResponse(response, `attendance.${format}`),
+  }
 }
 
 /**

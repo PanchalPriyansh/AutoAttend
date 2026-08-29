@@ -24,12 +24,14 @@ bytes are read, passed to the service, and dropped when the request ends.
 """
 
 import logging
+from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from pymongo.errors import PyMongoError
 
-from attendance.errors import ForbiddenError
+from attendance import csv_export, export_naming, pdf_export
+from attendance.errors import ExportUnavailableError, ForbiddenError
 from attendance.serializers import (
     serialize_assigned_classes,
     serialize_proposal,
@@ -40,6 +42,8 @@ from attendance.serializers import (
 )
 from attendance.service import (
     delete_session,
+    export_records,
+    export_summary,
     get_session,
     get_session_by_id,
     list_assigned_classes,
@@ -53,6 +57,7 @@ from attendance.threshold import current_threshold
 from attendance.validators import (
     parse_attendance_date,
     parse_date_range,
+    parse_export_filters,
     parse_session_filters,
     require_replace_flag,
     require_session_source,
@@ -104,6 +109,15 @@ def _handle_recognition_unavailable(exc):
     return jsonify({"error": str(exc)}), 503
 
 
+@attendance_bp.errorhandler(ExportUnavailableError)
+def _handle_export_unavailable(exc):
+    """The same 503 reasoning, for the PDF writer rather than the CV
+    stack. Registered separately because the two exceptions are unrelated
+    -- one handler catching both would report the wrong missing library.
+    """
+    return jsonify({"error": str(exc)}), 503
+
+
 @attendance_bp.errorhandler(PyMongoError)
 @attendance_bp.errorhandler(RuntimeError)
 def _handle_database_error(exc):
@@ -121,6 +135,39 @@ def _acting_user_id():
     token rather than from anything the client sent.
     """
     return parse_object_id(get_jwt_identity(), "id")
+
+
+def _now():
+    """The clock, read here so the formatter modules do not have to.
+
+    attendance/csv_export.py and attendance/pdf_export.py take the
+    generation date as an argument and read no clock of their own, which
+    is what makes a rendered file a function of its inputs.
+    """
+    return datetime.now(timezone.utc)
+
+
+def _file_response(payload, *, content_type, filename):
+    """A downloadable file on the same blueprint as the JSON routes.
+
+    `filename` has been through attendance/export_naming.py, which builds
+    it from an `[a-z0-9-]` whitelist -- so the quoting below cannot be
+    broken out of by a class name containing a quote, a semicolon, or a
+    newline. That whitelist is the header-injection defence; the quotes
+    here are only the header's own syntax.
+
+    `no-store` because both files name students and their attendance, and
+    neither should sit in a shared or on-disk cache after the faculty
+    member signs out.
+    """
+    return Response(
+        payload,
+        content_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 def _uploaded_capture():
@@ -272,6 +319,121 @@ def update_attendance_session(session_id):
 def delete_attendance_session(session_id):
     delete_session(get_db(), parse_object_id(session_id, "id"), _acting_user_id())
     return jsonify({"deleted": True}), 200
+
+
+# --- Export -----------------------------------------------------------
+#
+# Two paths rather than one with a `format` parameter: the two answers
+# differ in shape, not just in encoding -- different rows, different
+# service call, and only the PDF can be unavailable. A parameter would
+# put a branch in a handler and invite a third value nobody implemented.
+#
+# `/attendance/export/*` and not `/attendance/sessions/export`, which
+# would sit under the `<session_id>` rule above. Werkzeug does rank a
+# static segment higher, so it would route correctly today, but a URL
+# whose correctness rests on that is one refactor from being a 404.
+#
+# Both are reads. Neither records that it happened.
+
+
+@attendance_bp.route("/attendance/export/csv", methods=["GET"])
+@role_required("faculty")
+def export_attendance_csv():
+    filters = parse_export_filters(request.args.to_dict())
+
+    class_document, _, triples = export_records(
+        get_db(),
+        parse_object_id(request.args.get("class_id"), "class_id"),
+        _acting_user_id(),
+        **filters,
+    )
+
+    return _file_response(
+        csv_export.render_register(triples),
+        content_type="text/csv; charset=utf-8",
+        filename=export_naming.export_filename(
+            class_document.get("name"),
+            generated_on=_now(),
+            extension="csv",
+            **filters,
+        ),
+    )
+
+
+def _render_pdf(**report):
+    """Render the report, turning a writer failure into a 503.
+
+    The one try/except in this module, and it earns its place. The
+    library parses its own markup dialect and reaches the filesystem and
+    the network for an `<img>` -- attendance/pdf_export.py escapes every
+    string that reaches a Paragraph precisely so it cannot be steered
+    into doing either, and that escaping is the actual fix. This is the
+    net under it: a future reportlab surprise on some input nobody
+    predicted should be a 503 saying the report could not be produced,
+    not a 500 with a traceback, and certainly not on a blueprint whose
+    stated contract is that errors stay JSON.
+
+    Narrow on purpose. ValueError and OSError are what a bad render
+    raises; everything else -- a bug in the service layer, a database
+    failure -- keeps travelling to the handlers that know what it is.
+    The try/except lives here rather than in the writer, so the writer
+    stays a pure function that either returns bytes or raises.
+    """
+    try:
+        return pdf_export.render_report(**report)
+    except (ValueError, OSError) as exc:
+        logger.exception("The PDF writer failed to render an attendance report")
+        raise ExportUnavailableError(
+            "The report could not be produced. The CSV export is unaffected."
+        ) from exc
+
+
+@attendance_bp.route("/attendance/export/pdf", methods=["GET"])
+@role_required("faculty")
+def export_attendance_pdf():
+    # Checked before anything is read, so a server without the library
+    # answers 503 instead of doing a term's worth of queries and then
+    # failing to render them.
+    if not pdf_export.is_available():
+        raise ExportUnavailableError(pdf_export.UNAVAILABLE_MESSAGE)
+
+    filters = parse_export_filters(request.args.to_dict())
+
+    class_document, context, faculty, lectures, standings = export_summary(
+        get_db(),
+        parse_object_id(request.args.get("class_id"), "class_id"),
+        _acting_user_id(),
+        **filters,
+    )
+
+    # Read once and used for both the report and its filename. Two calls
+    # could straddle midnight and put one date inside the document and a
+    # different one on the file holding it.
+    generated_on = _now()
+
+    return _file_response(
+        _render_pdf(
+            class_name=class_document.get("name"),
+            course=context.get("course"),
+            context=context,
+            prepared_by=faculty.get("name") if faculty else None,
+            generated_on=generated_on,
+            lectures=lectures,
+            standings=standings,
+            # Passed in rather than read inside the writer, the same way
+            # the student serializers below receive it. A misconfigured
+            # bar degrades to None and the report simply states none.
+            threshold=current_threshold(),
+            **filters,
+        ),
+        content_type="application/pdf",
+        filename=export_naming.export_filename(
+            class_document.get("name"),
+            generated_on=generated_on,
+            extension="pdf",
+            **filters,
+        ),
+    )
 
 
 # --- A student's own attendance ---------------------------------------

@@ -31,6 +31,19 @@ DEFAULT_MARKED_BY = "faculty"
 DEFAULT_SESSION_LIMIT = 50
 MAX_SESSION_LIMIT = 200
 
+# The most lectures one export may cover. Well above a real semester for
+# a single class, and low enough that no one request assembles an
+# unreasonable file.
+#
+# It is a *refusal* rather than a cap, which is the whole difference
+# between it and MAX_SESSION_LIMIT above. Paging a screen to the newest
+# 200 lectures loses nothing -- the next page is a click away. Silently
+# trimming an export would produce a file indistinguishable from a term
+# with fewer lectures, and an attendance record that quietly omits ten of
+# them is worse than no file at all. So the export endpoints ask for a
+# narrower range instead of answering with part of one.
+MAX_EXPORT_SESSIONS = 400
+
 
 def _require_enum(value, field_name, allowed):
     if value is None or value == "":
@@ -175,6 +188,20 @@ def parse_session_filters(args):
         ),
         "skip": _parse_bounded_int(args, "skip", default=0, minimum=0),
     }
+
+
+def parse_export_filters(args):
+    """Validate the query string of either export endpoint.
+
+    The inclusive date range and nothing else. It exists as its own
+    function rather than the routes calling `parse_date_range` directly
+    so the two export handlers read like their neighbours -- and so that
+    `limit`/`skip` cannot be added here by reflex the next time somebody
+    tidies the two parsers together. An export is the whole range or it
+    is not an export; MAX_EXPORT_SESSIONS is what bounds it, in the
+    service, by refusing rather than trimming.
+    """
+    return parse_date_range(args)
 
 
 def require_replace_flag(value):

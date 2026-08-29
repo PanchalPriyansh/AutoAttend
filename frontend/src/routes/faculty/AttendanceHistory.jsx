@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   deleteAttendanceSession,
+  downloadAttendanceExport,
   getAttendanceSessionById,
   listAssignedClasses,
   listAttendanceSessions,
@@ -9,9 +10,22 @@ import {
 import AppShell from '../../components/layout/AppShell'
 import StudentStatusRow from '../../components/faculty/StudentStatusRow'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
+import { saveBlob } from '../../utils/download'
 import { describeClass, today } from '../../utils/lecture'
 
 const PAGE_SIZE = 25
+
+/**
+ * The two export formats, in the order they are offered. Labelled by what
+ * the file *is* rather than only by its extension: the CSV is the full
+ * register and the PDF is a summary report, and a faculty member choosing
+ * between them is choosing between those, not between two encodings of
+ * the same thing.
+ */
+const EXPORT_FORMATS = [
+  { format: 'csv', label: 'Download CSV', description: 'every lecture, row by row' },
+  { format: 'pdf', label: 'Download PDF', description: 'a summary report' },
+]
 
 /**
  * The saved records as a working map, keyed by student. Kept beside the
@@ -42,6 +56,11 @@ function AttendanceHistory() {
 
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
+  // Which format is being produced, or ''. Deliberately not folded into
+  // `pending`: producing a file must not disable the open session's save
+  // and delete buttons, and only the button actually running should say
+  // so.
+  const [exporting, setExporting] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [deletePrompt, setDeletePrompt] = useState(false)
@@ -112,6 +131,31 @@ function AttendanceHistory() {
       return undefined
     } finally {
       setPending(false)
+    }
+  }
+
+  /**
+   * Fetch one export and hand it to the browser.
+   *
+   * Its own try/catch rather than `run()` above, because that one owns
+   * `pending` — the state this must stay out of.
+   */
+  async function download(format) {
+    setError('')
+    setNotice('')
+    setExporting(format)
+    try {
+      const { blob, filename } = await downloadAttendanceExport(classId, {
+        from,
+        to,
+        format,
+      })
+      saveBlob(blob, filename)
+      setNotice(`${format.toUpperCase()} export saved as ${filename}.`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setExporting('')
     }
   }
 
@@ -274,6 +318,28 @@ function AttendanceHistory() {
               {selectedClass.semester} · {selectedClass.student_count} enrolled
             </p>
           )}
+
+          <div className="fh-export">
+            {EXPORT_FORMATS.map(({ format, label }) => (
+              <button
+                key={format}
+                type="button"
+                className="btn btn--secondary fh-export-btn"
+                onClick={() => download(format)}
+                // Nothing to export with no class chosen, nothing yet
+                // known while the list loads, and nothing at all when the
+                // filtered range holds no lectures. Both are disabled
+                // while either runs, so two clicks cannot race.
+                disabled={!classId || loading || total === 0 || exporting !== ''}
+              >
+                {exporting === format ? 'Preparing…' : label}
+              </button>
+            ))}
+            <span className="fh-export-note">
+              {EXPORT_FORMATS.map(({ format, description }) => `${format.toUpperCase()}: ${description}`).join(' · ')}
+              {from || to ? '. Covers the date range above.' : '. Covers every recorded lecture.'}
+            </span>
+          </div>
         </section>
 
         {error && (
@@ -284,14 +350,26 @@ function AttendanceHistory() {
             {error}
           </p>
         )}
-        {notice && (
-          <p className="callout callout--success fh-alert">
-            <span className="callout-mark" aria-hidden="true">
-              ✓
-            </span>
-            {notice}
-          </p>
-        )}
+        {/* The wrapper is always mounted and the callout appears inside
+            it, which is what makes the announcement work: a live region
+            has to exist before its content changes, and one that is
+            `hidden` is not announced at all. Empty and unstyled, so it
+            costs no layout.
+
+            It is here because a completed download changes nothing on the
+            page a screen reader would otherwise reach — the file lands in
+            the browser's own chrome. `error` above already announces
+            itself through role="alert". */}
+        <div aria-live="polite">
+          {notice && (
+            <p className="callout callout--success fh-alert">
+              <span className="callout-mark" aria-hidden="true">
+                ✓
+              </span>
+              {notice}
+            </p>
+          )}
+        </div>
 
         {classId && (
           <section className="fh-sessions" aria-labelledby="sessions-heading">

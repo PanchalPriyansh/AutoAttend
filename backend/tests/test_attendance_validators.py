@@ -27,6 +27,15 @@ Also covers 08-faculty-attendance-history.md's additions to this module
     passed in ("this class" for capture, "this session" for a correction),
     so the two callers cannot silently drift onto different rules.
 
+Also covers 21-attendance-export.md's one addition to this module
+("Backend" + "Rules for implementation" 149):
+  - `parse_export_filters` is `parse_date_range` and nothing else -- an
+    inclusive `from`/`to`, no `limit`, no `skip`, so paging cannot be
+    added to it by reflex. `MAX_EXPORT_SESSIONS` itself is exercised at
+    the route/service level (test_attendance_routes.py), not here, since
+    it is enforced by attendance/service.py::_export_sessions rather than
+    by this module.
+
 Pure unit tests -- no Flask, no database, no CV library involved.
 """
 
@@ -40,6 +49,8 @@ from attendance.validators import (
     DEFAULT_SESSION_LIMIT,
     MAX_SESSION_LIMIT,
     parse_attendance_date,
+    parse_date_range,
+    parse_export_filters,
     parse_optional_date,
     parse_session_filters,
     require_marked_by,
@@ -379,3 +390,62 @@ class TestParseSessionFilters:
 
     def test_a_large_skip_is_accepted_unclamped(self):
         assert parse_session_filters({"skip": "10000"})["skip"] == 10000
+
+
+# --- parse_export_filters (21-attendance-export.md) ---------------------
+#
+# Spec contract under test (21-attendance-export.md, "APIs" + "Backend" +
+# "Rules for implementation" 149 + Definition of done 3-4):
+#   - `parse_export_filters` is `parse_date_range` and nothing else -- an
+#     inclusive `from`/`to`, no `limit`, no `skip`. It exists as its own
+#     function only so the export routes read like their neighbours and so
+#     paging cannot be added to it by reflex later.
+
+
+class TestParseExportFilters:
+    def test_defaults_when_nothing_is_supplied(self):
+        assert parse_export_filters({}) == {"date_from": None, "date_to": None}
+
+    def test_from_and_to_are_normalized_to_utc_midnight(self):
+        filters = parse_export_filters({"from": "2020-01-01", "to": "2020-01-31"})
+
+        assert filters["date_from"] == datetime(2020, 1, 1, tzinfo=timezone.utc)
+        assert filters["date_to"] == datetime(2020, 1, 31, tzinfo=timezone.utc)
+
+    def test_to_equal_to_from_is_accepted_a_single_day_range(self):
+        filters = parse_export_filters({"from": "2020-01-01", "to": "2020-01-01"})
+
+        assert filters["date_from"] == filters["date_to"]
+
+    def test_to_earlier_than_from_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_export_filters({"from": "2020-02-01", "to": "2020-01-01"})
+
+    def test_a_malformed_from_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_export_filters({"from": "not-a-date"})
+
+    def test_a_malformed_to_is_rejected(self):
+        with pytest.raises(ValidationError):
+            parse_export_filters({"to": "not-a-date"})
+
+    def test_a_future_to_is_accepted_unlike_a_lecture_date(self):
+        """Unlike parse_attendance_date, a future bound selects nothing
+        that exists yet rather than inventing a lecture -- the same rule
+        parse_optional_date documents.
+        """
+        future = (datetime.now(timezone.utc) + timedelta(days=3650)).date().isoformat()
+
+        filters = parse_export_filters({"to": future})
+
+        assert filters["date_to"].date().isoformat() == future
+
+    def test_reads_only_from_and_to_never_limit_or_skip(self):
+        filters = parse_export_filters({"from": "2020-01-01", "limit": "5", "skip": "2"})
+
+        assert set(filters.keys()) == {"date_from", "date_to"}
+
+    def test_is_exactly_parse_date_range_and_nothing_else(self):
+        args = {"from": "2020-01-01", "to": "2020-01-31"}
+
+        assert parse_export_filters(args) == parse_date_range(args)
