@@ -11,6 +11,7 @@ from common.errors import ValidationError
 from config import Config
 from database.db import get_db
 from database.init_db import init_database
+from database.reporting import format_index_report
 from notifications.errors import MailerNotConfiguredError, MailerSendError
 from notifications.mailer import SmtpTransport
 from notifications.reporting import format_run_report
@@ -80,14 +81,38 @@ def create_app():
     app.register_blueprint(attendance_bp)
 
     @app.cli.command("init-db")
-    def init_db_command():
-        """Idempotently create AutoAttend's MongoDB collections, validators, and indexes."""
+    @click.option(
+        "--dry-run",
+        is_flag=True,
+        help="Show what would be created or rebuilt. Changes nothing.",
+    )
+    def init_db_command(dry_run):
+        """Idempotently create AutoAttend's MongoDB collections, validators, and indexes.
+
+        An index that has drifted from schema.py is dropped and rebuilt,
+        which is the one thing here that removes something from a live
+        database -- hence --dry-run, and hence a report that names every
+        rebuild and why.
+        """
         try:
-            result = init_database(get_db())
-            click.echo(f"Initialized collections: {', '.join(result['collections'])}")
+            result = init_database(get_db(), dry_run=dry_run)
         except Exception:
             logger.exception("Database initialization failed")
             click.echo("Database initialization failed. See server logs for details.", err=True)
+            raise SystemExit(1)
+
+        lines, error_lines = format_index_report(result, dry_run=dry_run)
+        for line in lines:
+            click.echo(line)
+        for line in error_lines:
+            click.echo(line, err=True)
+
+        # An index that could not be rebuilt leaves the database not
+        # matching schema.py even though everything else was applied, so
+        # this is not a successful run -- the same call
+        # notify-low-attendance makes about a student it could not reach.
+        # A dry run changed nothing and therefore failed at nothing.
+        if result["indexes"]["blocked"] and not dry_run:
             raise SystemExit(1)
 
     @app.cli.command("create-admin")
