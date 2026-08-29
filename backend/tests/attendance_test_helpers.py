@@ -231,29 +231,42 @@ class FakeCollection:
 
     def aggregate(self, pipeline):
         """A narrow stand-in for pymongo's `aggregate` -- handles exactly
-        the pipeline shape `attendance/service.py::_session_counts` issues
-        over `attendance_records`: a `$match` on
-        `session_id: {"$in": [...]}` followed by a `$group` by
-        `session_id` computing `total` (a count) and `present` (a
-        conditional sum on `status == "present"`).
+        the two pipeline shapes `attendance/service.py` issues over
+        `attendance_records`: a `$match` on `session_id: {"$in": [...]}`
+        followed by a `$group` computing `total` (a count) and `present`
+        (a conditional sum on `status == "present"`).
 
-        Not a general aggregation engine -- any other pipeline shape is a
-        signal this fake needs to grow deliberately, not a bug to silently
-        paper over, so it is not attempted here.
+        The two differ only in what they group by -- `_session_counts`
+        keys on `session_id` (present/total per lecture) and
+        `_student_counts`, added by 21-attendance-export.md, keys on
+        `student_id` (present/total per person across a range). The key is
+        read from the `$group` stage rather than hardcoded, which is the
+        whole extension: hardcoding one of them is what made this fake
+        need changing at all.
+
+        Still not a general aggregation engine -- any other pipeline shape
+        is a signal this fake needs to grow deliberately, not a bug to
+        silently paper over, so it is not attempted here.
         """
         match_stage = pipeline[0]["$match"]
         matched = [d for d in self._docs if _matches(d, match_stage)]
 
+        # "$student_id" -> "student_id". Only the plain field-path form is
+        # supported, which is the only form either caller uses.
+        group_key = pipeline[1]["$group"]["_id"].lstrip("$")
+
         groups = {}
         for document in matched:
-            bucket = groups.setdefault(document["session_id"], {"total": 0, "present": 0})
+            bucket = groups.setdefault(
+                document[group_key], {"total": 0, "present": 0}
+            )
             bucket["total"] += 1
             if document.get("status") == "present":
                 bucket["present"] += 1
 
         return [
-            {"_id": session_id, "total": bucket["total"], "present": bucket["present"]}
-            for session_id, bucket in groups.items()
+            {"_id": key, "total": bucket["total"], "present": bucket["present"]}
+            for key, bucket in groups.items()
         ]
 
 

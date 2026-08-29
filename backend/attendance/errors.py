@@ -1,13 +1,13 @@
 """Domain exceptions specific to attendance.
 
 Bad input, missing target, and conflicting state already exist in
-common/errors.py and are reused rather than redeclared -- only the idea
-below is genuinely new to this feature.
+common/errors.py and are reused rather than redeclared -- only the two
+ideas below are genuinely new to this feature.
 """
 
 from common.errors import AppError
 
-__all__ = ["ForbiddenError"]
+__all__ = ["ForbiddenError", "ExportUnavailableError"]
 
 
 class ForbiddenError(AppError):
@@ -24,4 +24,21 @@ class ForbiddenError(AppError):
     misconfiguration (an unassigned class, or an assignment given to the
     wrong person) behind a message that sends the faculty member hunting
     for a typo instead of asking the admin.
+    """
+
+
+class ExportUnavailableError(AppError):
+    """The PDF writer is not importable -- maps to 503.
+
+    Same reasoning as recognition.errors.RecognitionUnavailableError: the
+    request was valid, nothing broke, the server is missing a library,
+    and the identical request succeeds once it is installed. A 500 would
+    send an operator hunting for a bug that does not exist.
+
+    Deliberately **not** a subclass of RecognitionUnavailableError,
+    despite mapping to the same status. They have nothing to do with each
+    other -- one is a document writer, the other is computer vision -- and
+    a shared parent would let one `except` swallow both and report the
+    wrong missing dependency. Only the CSV's sibling endpoint can never
+    raise this: writing a CSV needs nothing that is not in the stdlib.
     """

@@ -29,7 +29,7 @@ from pymongo.errors import DuplicateKeyError
 
 from academic.context import class_hierarchy_context
 from attendance.errors import ForbiddenError
-from attendance.validators import require_records
+from attendance.validators import MAX_EXPORT_SESSIONS, require_records
 from common.errors import ConflictError, NotFoundError, ValidationError
 from database.schema import (
     ATTENDANCE_RECORDS,
@@ -493,6 +493,207 @@ def get_session_by_id(db, session_id, faculty_id):
     session = _require_owned_session(db, session_id, faculty_id)
 
     return session, _load_session_records(db, session_id)
+
+
+# --- Export -----------------------------------------------------------
+#
+# Two shapes over one range: the CSV's register (a row per student per
+# lecture) and the PDF's report (a row per student, plus an index of the
+# lectures the figures came from). Both are reads and neither writes so
+# much as a record that it happened.
+#
+# They deliberately share `_export_sessions`. The owner check and the
+# session bound are the two things that must be identical between them --
+# a second copy is how one format ends up enforcing something the other
+# does not -- while the fetch below it differs because the questions do.
+
+
+def _export_sessions(db, class_id, faculty_id, *, date_from, date_to):
+    """`(class_document, sessions)` -- the lectures one export covers,
+    oldest first.
+
+    Authorization, then the range, then the bound, in that order: nothing
+    is counted for a class the caller does not hold, and nothing is
+    fetched for a range too wide to answer.
+
+    The class document comes back rather than being re-read by each
+    caller: `require_owned_class` has already fetched it, and both
+    exports need its name for the filename.
+
+    Ascending, unlike `list_sessions`. A screen leads with the lecture you
+    just took; a file is read from the top and a register runs forwards.
+    """
+    class_document = require_owned_class(db, class_id, faculty_id)
+
+    query = {"class_id": class_id}
+    date_range = {}
+    if date_from is not None:
+        date_range["$gte"] = date_from
+    if date_to is not None:
+        # Inclusive, matching list_sessions: both bounds and the stored
+        # date are at UTC midnight, so an equal value is a match.
+        date_range["$lte"] = date_to
+    if date_range:
+        query["date"] = date_range
+
+    total = db[ATTENDANCE_SESSIONS].count_documents(query)
+    if total > MAX_EXPORT_SESSIONS:
+        raise ValidationError(
+            f"That range covers {total} lectures, and an export can cover at "
+            f"most {MAX_EXPORT_SESSIONS}. Narrow the date range and try again."
+        )
+
+    return class_document, list(
+        db[ATTENDANCE_SESSIONS].find(query).sort([("date", 1)])
+    )
+
+
+def _students_by_id(db, student_ids):
+    """One `$in` lookup for a batch of students, keyed by id."""
+    if not student_ids:
+        return {}
+
+    return {
+        student["_id"]: student
+        for student in db[USERS].find({"_id": {"$in": list(student_ids)}})
+    }
+
+
+def _sort_key(student):
+    return (student.get("name") or "").lower()
+
+
+def export_records(db, class_id, faculty_id, *, date_from, date_to):
+    """The register: `(class_document, context, triples)`.
+
+    Each triple is `(session, record, student)`, ordered by lecture date
+    ascending and then by student name -- the order the file is written
+    in, decided here because the service is what knows both orderings.
+
+    Two batched queries rather than `_load_session_records` per session:
+    a term of lectures would otherwise be a hundred round trips to build
+    one file.
+    """
+    class_document, sessions = _export_sessions(
+        db, class_id, faculty_id, date_from=date_from, date_to=date_to
+    )
+    context = class_hierarchy_context(db, [class_document]).get(class_id, {})
+
+    if not sessions:
+        return class_document, context, []
+
+    session_ids = [session["_id"] for session in sessions]
+    records = list(
+        db[ATTENDANCE_RECORDS].find({"session_id": {"$in": session_ids}})
+    )
+    students = _students_by_id(db, {record["student_id"] for record in records})
+
+    by_session = {}
+    for record in records:
+        student = students.get(record["student_id"])
+        if student is None:
+            # Should be unreachable -- nothing in this project hard-deletes
+            # a user. Skipped rather than raised, mirroring
+            # _load_session_records: one bad row must not cost the whole
+            # export.
+            logger.warning(
+                "Attendance record %s references a missing student", record["_id"]
+            )
+            continue
+        by_session.setdefault(record["session_id"], []).append((record, student))
+
+    triples = []
+    for session in sessions:
+        pairs = by_session.get(session["_id"], [])
+        pairs.sort(key=lambda pair: _sort_key(pair[1]))
+        triples.extend((session, record, student) for record, student in pairs)
+
+    return class_document, context, triples
+
+
+def _student_counts(db, session_ids):
+    """Present/total per student across a batch of sessions, from one
+    grouped aggregation.
+
+    The per-student twin of `_session_counts`, and grouped in the database
+    for the same reason: summing a term of rosters in Python would pull
+    every record of every lecture across the wire to produce two numbers
+    per person.
+    """
+    if not session_ids:
+        return {}
+
+    pipeline = [
+        {"$match": {"session_id": {"$in": session_ids}}},
+        {
+            "$group": {
+                "_id": "$student_id",
+                "total": {"$sum": 1},
+                "present": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "present"]}, 1, 0]}
+                },
+            }
+        },
+    ]
+
+    return {
+        row["_id"]: {"total": row["total"], "present": row["present"]}
+        for row in db[ATTENDANCE_RECORDS].aggregate(pipeline)
+    }
+
+
+def export_summary(db, class_id, faculty_id, *, date_from, date_to):
+    """The report: `(class_document, context, faculty, lectures, standings)`.
+
+    `lectures` is `(session, counts)` per recorded lecture, oldest first.
+    `standings` is `(student, present, total)` per student, by name.
+
+    **Who appears is the union of the roster and everyone holding a record
+    in range.** The roster alone would drop a student unenrolled mid-term
+    whose lectures are still in the range and still in the CSV, and two
+    files describing the same range must not disagree about who was in
+    it. The records alone would drop an enrolled student with nothing
+    recorded yet -- which is exactly the row a head of department is
+    looking for.
+
+    `total` is each student's own record count, never the lecture count.
+    A student enrolled halfway through a term has fewer records, and
+    dividing by the class's session count would mark them down for
+    lectures held before they were on the roster.
+    """
+    class_document, sessions = _export_sessions(
+        db, class_id, faculty_id, date_from=date_from, date_to=date_to
+    )
+    context = class_hierarchy_context(db, [class_document]).get(class_id, {})
+    faculty = db[USERS].find_one({"_id": faculty_id})
+
+    session_ids = [session["_id"] for session in sessions]
+    counts = _session_counts(db, session_ids)
+    lectures = [(session, counts.get(session["_id"], {})) for session in sessions]
+
+    per_student = _student_counts(db, session_ids)
+
+    roster = {
+        student["_id"]: student
+        for _, student in list_enrollments(db, class_id)
+    }
+    # Anyone with a record but no longer enrolled -- fetched separately
+    # rather than assumed absent, so the two exports agree on who was in
+    # the range.
+    missing = set(per_student) - set(roster)
+    students = {**roster, **_students_by_id(db, missing)}
+
+    standings = [
+        (
+            student,
+            per_student.get(student_id, {}).get("present", 0),
+            per_student.get(student_id, {}).get("total", 0),
+        )
+        for student_id, student in students.items()
+    ]
+    standings.sort(key=lambda standing: _sort_key(standing[0]))
+
+    return class_document, context, faculty, lectures, standings
 
 
 def update_session_records(db, session_id, faculty_id, records):

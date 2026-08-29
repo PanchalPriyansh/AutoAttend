@@ -193,6 +193,68 @@
   font-size: 0.8rem;
 }
 
+/* --- The exports -----------------------------------------------------
+
+   Two buttons and a line saying what each file is. They sit in their own
+   row under the filter rather than as two more children of .fh-form.
+   That is the whole reason the three measured breakpoints below (677,
+   450, 389) still hold, and it was verified rather than assumed: .fh-form
+   measures 253.47px/3 lines below 390, 163.28/2 from 390 to 677, and
+   78.19/2 from 678 up -- identical to the byte with this row present and
+   with it removed, at all fifteen widths measured. Putting a button into
+   a row of `align-items: flex-end` labelled fields would also have
+   aligned it to the bottom of a label it does not have.
+
+   The rule above it is the same treatment .fh-actions uses at the foot
+   of the detail panel: inputs above, the thing they act on below.
+
+   How it wraps, measured (width -> row height, lines):
+
+     320        207.47   3   buttons stack, note under them
+     360        151.38   2   buttons pair, note under them
+     389-481    125.28   2   "
+     677-678     95.28   1   note beside the buttons, 3 lines of it
+     768-1440    69.19   1   note beside the buttons, 2 lines
+
+   No breakpoint of its own, because it does not need one: 130.17 + 12 +
+   129.84 = 272 of button against 246 of measure at 320 is what stacks
+   them, and the note's 240px basis is what drops it to its own line
+   below 677. Three shapes, all of them from `flex-wrap` alone.
+
+   **No (pointer: coarse) rule either, and that is measured too.** .btn
+   is 44.09px tall at every one of those widths -- 26.09 of line-height
+   (tokens.css sets `font: 18px/145%` on :root, and a percentage
+   line-height inherits as the computed 26.09px length), plus 16 of
+   padding and 2 of border. It already clears the 44px target that
+   admin-users.css and admin-face-enrollment.css each had to add a rule
+   to reach, so adding one here would assert nothing. */
+.fh-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: center;
+  margin-top: var(--space-16);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--border);
+}
+
+/* Neither button grows. Two half-width bars would read as the primary
+   action of the card, which they are not -- the card is for choosing a
+   class, and these take what has been chosen away with you. */
+.fh-export-btn {
+  flex: none;
+}
+
+/* Beside the buttons where the measure allows, wrapped under them where
+   it does not. Same size and colour as .fh-context above it, because it
+   is the same kind of thing: context for the controls it sits with. */
+.fh-export-note {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 /* --- Empty and busy states ------------------------------------------
 
    "No attendance has been recorded for this class yet" as an unstyled
