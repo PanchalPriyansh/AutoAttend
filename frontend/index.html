@@ -4,12 +4,46 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Tints the browser chrome to match the page. Two tags because the
-         app follows the system palette; these are the light and dark --bg
-         values from src/styles/tokens.css, and a meta tag cannot read a
-         custom property, so changing --bg means changing these. -->
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#16171d" media="(prefers-color-scheme: dark)" />
+    <!-- Tints the browser chrome to match the page. ONE tag, set by the
+         script below: this used to be two tags scoped with
+         media="(prefers-color-scheme: ...)", and a manually chosen theme
+         cannot be expressed in a media-scoped meta. The content is the
+         --bg value from src/styles/tokens.css for whichever theme won,
+         and a meta cannot read a custom property -- so changing --bg
+         means changing the map below and the one in src/theme.js. -->
+    <meta name="theme-color" content="#ffffff" />
+
+    <!-- Applies the stored theme BEFORE the first paint.
+
+         Deliberately a classic inline script and not a module, and not
+         anything React does. A type="module" script is deferred, and a
+         useEffect runs after React has already painted -- either way a
+         dark-themed user gets a white frame on every load of every page.
+         This is the only place in the app that can be early enough.
+
+         It duplicates src/theme.js (the key, the attribute, the tints)
+         because nothing importable runs this early. Change them
+         together; the module says so too. -->
+    <script>
+      ;(function () {
+        var TINT = { light: '#ffffff', dark: '#16171d' }
+        var stored = null
+        try {
+          stored = localStorage.getItem('autoattend-theme')
+        } catch (e) {
+          // Storage throws outright in some privacy modes -- fall through
+          // to the system palette rather than failing the page.
+        }
+        var resolved =
+          stored === 'light' || stored === 'dark'
+            ? stored
+            : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+        document.documentElement.setAttribute('data-theme', resolved)
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', TINT[resolved])
+      })()
+    </script>
     <title>AutoAttend</title>
   </head>
   <body>

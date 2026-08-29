@@ -16,8 +16,10 @@
    declaring their own chrome, and the focus ring is global, in base.css.
 
    The spacing scale it used to defer now exists (--space-* in
-   tokens.css), and this file's spacing composes it. Still deferred on
-   purpose, its own spec: a manual theme toggle. */
+   tokens.css), and this file's spacing composes it. So does the manual
+   theme toggle it deferred last: the user block now carries a three-state
+   theme select beside the name, and the palette is chosen rather than
+   inherited from the OS. Nothing in this file is deferred any more. */
 
 /* Hidden by .visually-hidden (further down, and reused rather than
    duplicated) until focused; this undoes that hiding and puts the link
@@ -37,10 +39,25 @@
   border-radius: 6px;
 }
 
+/* The column gap is 12 and not the 24 it was until the theme control
+   arrived. It is worth being precise about what that change does,
+   because it looks like a spacing decision and is not one: with
+   `justify-content: space-between` and three children, any free space on
+   a line is distributed BETWEEN the items, so the column gap is a
+   minimum that is only ever reached at the moment the line is full. It
+   is therefore invisible at every width where the header is not on the
+   edge of wrapping, and all it moves is where that edge is.
+
+   Measured, no control, at 320/360/390/413/414/480/689/768/1024/1440:
+   header height and <h1> top are IDENTICAL at 24 and at 12, all ten
+   widths. What changes is only the width at which the header becomes one
+   row -- faculty 689 to 665, admin 677 to 653 -- and that is the room
+   the theme select needed. The <= 480 block below already used 12, so
+   the column gap is now one value everywhere. */
 .app-header {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-12) var(--space-24);
+  gap: var(--space-12);
   align-items: center;
   justify-content: space-between;
   padding-bottom: var(--space-16);
@@ -60,20 +77,21 @@
    behind a Menu button instead -- see the block further down -- and that
    is what took the phone header to two rows and the <h1> to 132px.
 
-   This block is the rhythm, and it still earns its place above the
-   collapse. The 24px column gap is generous for a phone: at 414px, the
-   first width where the full nav does fit beside the brand, that gap
-   alone is what would push it onto its own row -- so halving it is what
-   keeps 414 at two rows instead of three, on the far side of the
-   breakpoint where no toggle exists to help. Below that the rows are
-   tighter -- 8px between them, and less air under the rule -- which is
-   worth about 20px on every page.
+   This block used to halve the column gap here as well, and that is why
+   it opened by calling the 24px one generous for a phone: at 414px, the
+   first width where the full nav fits beside the brand, that gap alone
+   was what pushed it onto its own row. The column gap is 12 at every
+   width now (see the block above), so this one has nothing left to say
+   about columns and sets only the row gap -- 8px between the rows, and
+   less air under the rule, worth about 20px on every page. Declaring
+   `gap: 8px 12px` here again would restate the base value and go stale
+   the day it changed.
 
-   Nothing above 480px is touched: the header is a single 61px row from
-   689px up for every role, and already correct. */
+   Nothing above 480px is touched by THIS block. What the theme control
+   did to the widths above it is measured further down, over .app-user. */
 @media (max-width: 480px) {
   .app-header {
-    gap: var(--space-8) var(--space-12);
+    row-gap: var(--space-8);
     padding-bottom: var(--space-12);
     margin-bottom: var(--space-16);
   }
@@ -229,9 +247,50 @@
   }
 }
 
+/* --- The user block, and what the theme control cost it --------------
+
+   It holds three things now -- the name, the theme select, and Log out --
+   where it held two, and the select is 93px wide. With the gap it
+   brought, that is 105px added to the widest of the header's three
+   children, on a row that had about 90px of slack at 768. So this is the
+   one place the control had to be paid for, and the numbers are:
+
+     one-row threshold      admin  faculty  student
+     main, no control        677     689      526     <- 17's numbers
+     control, as first built 782     794      631
+     + .app-user gap 8       774     786      623
+     + header col-gap 12     750     762      599     <- shipped
+
+   The two changes are different in kind. The column gap costs nothing
+   (see the note over .app-header: identical pixels at all ten widths,
+   it only moves the wrap edge). This 8px is a real change, and it is
+   here because the block now holds two adjacent CONTROLS rather than a
+   label and a control -- 8 is what the app puts between buttons that
+   belong together, and 12 was spacing a name away from a button.
+
+   What that buys, and what it does not:
+
+   - 768 is a single 61.1px row again for all three roles, which is the
+     width that mattered most: it is the standard tablet, and every one
+     of the nine pages carries this header.
+   - 360, 390, 413 and 414 are UNCHANGED, to the tenth of a pixel, with
+     the control present -- the phone header 17 fixed stays fixed.
+   - 1024 and 1440 are unchanged.
+   - The band 689-761 (faculty) / 677-749 (admin) is two rows where it
+     was one. That is the honest cost, and it is the same trade 17 made
+     for admin's 402-413: no arrangement of a 105px control fits a row
+     that had 90px, so the choice was which widths pay.
+   - Student loses its one-row header between 414 and 480 (57.1 -> 92.2).
+     At 480 the whole header has 448px and the control needs 105 of a
+     10px surplus; no tightening reaches it.
+
+   These are measured with a 16-character name, as 17's were. A shorter
+   name moves every threshold left by the difference -- the name is the
+   elastic part of this block, which is exactly why it is the part that
+   ellipses. */
 .app-user {
   display: flex;
-  gap: var(--space-12);
+  gap: var(--space-8);
   align-items: center;
   /* A flex item will not shrink below its content unless told it may, so
      without this a long name pushes Log out toward the edge instead of
@@ -251,9 +310,53 @@
   white-space: nowrap;
 }
 
-/* The logout button has no rule here any more: it is `btn btn--secondary`
-   from components.css, with nothing about it specific to the header. The
-   focus ring is likewise global now, in base.css. */
+/* The theme select, which composes .form-field from components.css and
+   keeps only this hook for what is specific to sitting in a header.
+
+   Two declarations, and nothing else -- no chrome, no colour, no font.
+   The select's fill, border, radius and 0.9rem type are the primitive's,
+   and 0.9rem in particular must not be reduced to win width back: it
+   computes to 16.2px against the 18px root, and iOS zooms the page when
+   a form control under 16px takes focus. components.css says so where it
+   sets it.
+
+   flex: none is on the wrapper, because the wrapper is what .app-user
+   lays out -- the select is a column flex item inside it. It is there
+   because the name beside it is the flexible one: without it a tight row
+   would take width from the control rather than from the label, which is
+   backwards, and it is the same reason .app-user carries min-width: 0
+   for the name and not for the button.
+
+   min-height matches the 44.1px .btn beside it. The select's own box is
+   41px, and 3px of mismatch between two adjacent controls reads as a
+   misalignment rather than as a size. It doubles as the touch target:
+   the shell's other control takes its 44px floor under (pointer:
+   coarse), and this one clears it at every pointer, so it needs no
+   query of its own. Measured: this changes no header height at any
+   width, because the 44.1px button already set the row. */
+.app-theme {
+  flex: none;
+}
+
+.app-theme select {
+  min-height: 44px;
+}
+
+/* The logout button still has no CHROME here -- it is `btn btn--secondary`
+   from components.css, and the focus ring is global, in base.css. This is
+   arrangement, which is the page's to own, and it is the third and last
+   `the name is what gives way` rule in this block.
+
+   Without it, at 320px, the row runs out of width and flex takes the
+   shortfall from every child that can shrink -- including the button,
+   which went to 77.2px and wrapped "Log out" onto a second line, making
+   the whole header 26.1px taller. The name had already ellipsed to
+   101.8px at that point, which is the block working as intended; the
+   button joining in is not. Measured after: 320px is 109.2px again,
+   exactly main's height, with the name at 96.8px. */
+.app-user .btn {
+  flex: none;
+}
 
 .page {
   max-width: 1100px;

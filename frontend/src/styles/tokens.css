@@ -13,13 +13,33 @@
    Body text is #5a5364 rather than something lighter so it clears 6:1 on
    white: the previous value sat close enough to the 4.5:1 floor that it
    passed at the 18px base size and failed everywhere the UI goes smaller.
-   --text-muted now carries the lighter role it used to serve. */
+   --text-muted now carries the lighter role it used to serve.
+
+   THE DARK PALETTE IS AN ATTRIBUTE BLOCK, NOT A MEDIA QUERY, and that is
+   the one structural thing about this file worth knowing. It used to be
+   `@media (prefers-color-scheme: dark)`, which meant every user followed
+   their OS and nobody could override it. The theme is now chosen -- light,
+   dark, or system -- and an inline script in index.html resolves that
+   choice before the first paint and writes data-theme="light" or "dark"
+   on <html>, so the selector below is all the CSS needs.
+
+   Keeping the media query as well was the obvious alternative and it is
+   worse: honouring an override alongside it needs the dark palette
+   written TWICE, as :root:not([data-theme='light']) inside the query and
+   as :root[data-theme='dark'] outside it. Twenty-odd colours duplicated
+   in the file whose entire job is to be the single place a colour is
+   written is the same footgun the --bg warnings below describe, and it
+   would go wrong the first time somebody adjusted one copy. The cost of
+   resolving in script instead is that "system" has to watch the OS
+   itself, with a listener, rather than getting it free -- paid in
+   src/theme.js. */
 :root {
   --text: #5a5364;
   --text-h: #08060d;
   --text-muted: #6f6a7c;
-  /* Also written into index.html as <meta name="theme-color">, which
-     cannot read a custom property -- change both together. */
+  /* Also written as a literal in index.html's inline script and in
+     src/theme.js, which set <meta name="theme-color"> -- a meta cannot
+     read a custom property. Change all three together. */
   --bg: #fff;
   --surface: #f6f5f8;
   --border: #ded9e4;
@@ -93,7 +113,12 @@
   --space-32: 32px;
 
   font: 18px/145% system-ui, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: light dark;
+  /* Explicit per theme, not `light dark`. Native chrome -- scrollbars,
+     the date inputs on the two faculty attendance pages and the student
+     one -- follows this rather than the palette below, so leaving it to
+     the OS would give somebody who chose light a light page with a dark
+     scrollbar and a dark date picker. Its pair is in the dark block. */
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -106,33 +131,36 @@
    -- a colour picked for contrast against white is unreadable on a dark
    surface, and the "weak" tints have to become dark tints rather than
    pale ones or they glow. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    /* Lightened from #7b8291, which cleared 4.5:1 against --bg (4.64) but
-       not against --surface (4.21) -- so it was safe only for as long as
-       nothing put muted text on a card. This value clears both (5.37 on
-       --bg, 4.88 on --surface) and still reads dimmer than --text, which
-       is 6.40 on the same surface. Light mode already passed both (5.21
-       and 4.80) and is unchanged. */
-    --text-muted: #868d9c;
-    /* See the note on the light --bg: index.html carries this value too. */
-    --bg: #16171d;
-    --surface: #1e2028;
-    --border: #333642;
-    --accent: #a5b4fc;
-    --accent-hover: #c3cdfd;
-    --accent-weak: #232637;
-    --success: #6ee7b7;
-    --success-weak: #16261f;
-    --warning: #fcd34d;
-    --warning-weak: #2a2313;
-    --danger: #f2b8b5;
-    --danger-weak: #2c1a19;
-    --focus: #a5b4fc;
-    /* Elevation reads as a darker well rather than a cast shadow: a
-       black shadow is invisible against a near-black background. */
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
-  }
+:root[data-theme='dark'] {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  /* Lightened from #7b8291, which cleared 4.5:1 against --bg (4.64) but
+     not against --surface (4.21) -- so it was safe only for as long as
+     nothing put muted text on a card. This value clears both (5.37 on
+     --bg, 4.88 on --surface) and still reads dimmer than --text, which
+     is 6.40 on the same surface. Light mode already passed both (5.21
+     and 4.80) and is unchanged. */
+  --text-muted: #868d9c;
+  /* See the note on the light --bg: index.html's inline script and
+     src/theme.js carry this value too. */
+  --bg: #16171d;
+  --surface: #1e2028;
+  --border: #333642;
+  --accent: #a5b4fc;
+  --accent-hover: #c3cdfd;
+  --accent-weak: #232637;
+  --success: #6ee7b7;
+  --success-weak: #16261f;
+  --warning: #fcd34d;
+  --warning-weak: #2a2313;
+  --danger: #f2b8b5;
+  --danger-weak: #2c1a19;
+  --focus: #a5b4fc;
+  /* Elevation reads as a darker well rather than a cast shadow: a
+     black shadow is invisible against a near-black background. */
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.35);
+  /* The pair of `color-scheme: light` in the block above -- so the
+     scrollbars and the native date pickers follow the chosen theme
+     rather than the operating system's. */
+  color-scheme: dark;
 }
