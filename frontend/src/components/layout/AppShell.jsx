@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { homeFor } from '../../navigation'
 import NavBar from './NavBar'
+import ThemeToggle from './ThemeToggle'
 
 /* The frame every signed-in page renders as its root.
  *
@@ -33,8 +34,14 @@ function AppShell({ title, children }) {
 
         <NavBar role={user?.role} />
 
+        {/* The theme control goes INSIDE this block rather than beside
+            it: .app-header is a three-item flex row with
+            space-between, and a fourth child would redistribute the
+            header at every width on every page. Same call NavBar's
+            toggle made, for the same reason. */}
         <div className="app-user">
           {user?.name ? <span>{user.name}</span> : null}
+          <ThemeToggle />
           <button type="button" className="btn btn--secondary" onClick={logout}>
             Log out
           </button>
