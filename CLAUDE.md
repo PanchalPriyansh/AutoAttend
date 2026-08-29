@@ -215,6 +215,13 @@ pip install -r backend/requirements.txt
 cd backend
 python app.py
 
+# Create the collections, validators, and indexes. Idempotent, and safe to
+# re-run: an index that has drifted from database/schema.py is dropped and
+# rebuilt rather than aborting the run. --dry-run prints the plan and writes
+# nothing, which is worth doing first on a database that has real data in it.
+flask init-db --dry-run
+flask init-db
+
 # Create the first admin user (no public registration exists)
 flask create-admin
 
@@ -285,8 +292,9 @@ The active feature specification must be checked before implementation, testing,
 
 The middle two steps are for **backend vertical slices** — an endpoint, an auth
 boundary, a database write, anything `pytest` can pin. Specs `01`–`11` all took
-them, and they earned their place: the review pipeline caught a real provenance
-bug in `08` and three accepted hardening changes in `10`.
+them, and so did `20` — the first backend slice since — and they earned their
+place: the review pipeline caught a real provenance bug in `08`, three accepted
+hardening changes in `10`, and four accepted refinements in `20`.
 
 **Frontend-only work has taken a different route since `12`, and that is
 deliberate rather than drift.** There is no frontend test runner in this
@@ -320,6 +328,7 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 
 | Feature | Status |
 |---|---|
+| Database setup | Implemented — `database/schema.py` declares every collection, `$jsonSchema` validator, and index as plain data; `flask init-db` applies it idempotently and is never run at startup, so an unreachable MongoDB still lets the app serve `/api/health`. **`20-init-db-index-reconcile` made it survive a drifted database:** MongoDB will not reshape an index in place, so a live index whose keys, uniqueness, or options no longer match its declaration used to raise `IndexKeySpecsConflict` and skip every collection after it. `database/indexes.py` (pure — no pymongo, no Flask) now plans each declared index against `index_information()`, and `init_db.py` applies that plan in check→drop→create order, one index at a time. **Only an index colliding with a declared one is ever dropped** — the planner walks the declarations and never the live indexes, so `_id_` and an operator's ad-hoc indexes are unreachable rather than filtered. A unique index is never dropped on faith: duplicates are looked for first and a hit is reported rather than dropped, so a failed rebuild cannot leave a collection unconstrained. That pre-check also guards a *first* creation, since `create_index(unique=True)` over bad data would abort the run the same way. `--dry-run` previews the plan while writing nothing (it still reads, so it can warn that a real run would be blocked). `background` and `ns` are treated as inert so an old catalog entry does not trigger a pointless rebuild. Reporting lives in `database/reporting.py`, mirroring `notifications/reporting.py`. Deferred: undeclared indexes are never tidied up (making the declared set correct is not the same as owning the whole index space), validator drift is not compared (`collMod` reapplies in place and never conflicted), and the check-then-write race is accepted rather than locked. |
 | Authentication | Implemented — Flask-JWT-Extended login/refresh/logout/me via HttpOnly cookies, role-based `@role_required`, `flask create-admin` bootstrap. No public registration. |
 | Academic hierarchy | Implemented — CRUD REST APIs for all five levels (`/api/institutes`, `/api/departments`, `/api/semesters`, `/api/courses`, `/api/classes`); writes are admin-only, reads are admin + faculty. Parents are verified on create and deletes are blocked (never cascaded) while children exist. Admin UI at `/admin/academics`. Faculty assignment and student enrollment are now handled by Admin user management (below). |
 | Admin user management | Implemented — admin-only `/api/users` CRUD (create/list/get/update, `PUT .../status`, `PUT .../password`), plus `PUT /api/classes/<id>/faculty` and `/api/classes/<id>/students` for enrollment. Accounts are deactivated, never deleted; `role` is immutable after creation; an admin cannot deactivate themselves or the last active admin. Admin UI at `/admin/users`, with the class assignment panel inside `/admin/academics`. Deferred: pagination on the user list, and invalidating an already-issued access token on password reset/deactivation (bounded by the 15-minute access-token lifetime). |
@@ -340,7 +349,11 @@ Update this section when major features become implemented.
 
 ### Next planned feature
 
-Specs `01`–`13` are built. Every core capability this file describes exists, `12-app-shell` added the frame the UI work sits inside, and `13-component-vocabulary` added the primitives the remaining pages are built from.
+Specs `01`–`20` are built and merged. Every core capability this file describes exists, `12-app-shell` added the frame the UI work sits inside, and `13-component-vocabulary` added the primitives the remaining pages are built from.
+
+**`20-init-db-index-reconcile` is the most recent, and it is not part of any of the groups below.** It is a backend slice — it took the full pipeline, unlike the frontend-only specs `12`–`19` — and it has no UI at all, deliberately: `flask init-db` is run from a terminal by whoever administers the deployment, and the only screen it could plausibly have grown is a "drop an index on the production database" button. That is the same call `10-low-attendance-notifications` made. See its row in the table above.
+
+**Next: CSV export of a class's attendance.** Self-contained, no new security surface, and unlike `20` it does have a user-facing half (a faculty download on the attendance history page), so the rule that a feature ships its designed, responsive UI in the same cycle applies to it.
 
 **The redesign is finished.** Every page was replaced through `/frontend-maker`, in small related groups, and `scaffolding.css` is deleted:
 
@@ -366,7 +379,7 @@ Beyond that, what remains is only the deferred items already recorded per featur
 
 - An admin trigger with an admin-set threshold for notifications — the alternative `11` considered and did not choose, since it needs a new blueprint, an admin route, and the threshold moving to MongoDB, and it would undo the deliberately-kept `"notification"` route guard.
 - A faculty/admin view of a *named* student's attendance — deliberately ruled out as a "small" feature: `09` built things so that **no endpoint anywhere takes a student id**, and undoing that is a security decision, not a finishing touch.
-- CSV/PDF export, user-list pagination, bulk face-enrollment import, and live/streaming recognition.
+- User-list pagination, bulk face-enrollment import, and live/streaming recognition. **CSV export is no longer on this list** — it is the next scheduled feature; see above. PDF export is not scheduled and is a separate question.
 
 ---
 
