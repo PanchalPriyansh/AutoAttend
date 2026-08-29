@@ -22,6 +22,9 @@ Thumbs.db
 # Claude Code local files
 .claude/plans/
 
+# Editor config
+.vscode/
+
 # Frontend dependencies
 node_modules/
 
