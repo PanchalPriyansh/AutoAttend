@@ -40,7 +40,16 @@ function AppShell({ title, children }) {
             header at every width on every page. Same call NavBar's
             toggle made, for the same reason. */}
         <div className="app-user">
-          {user?.name ? <span>{user.name}</span> : null}
+          {/* The name is the link to /account, rather than a control
+              added beside it. 19 showed this block has no slack -- a
+              105px addition cost two gap reductions and moved three
+              one-row thresholds -- so the account gets no new element,
+              only a destination on text that was already here. */}
+          {user?.name ? (
+            <Link className="app-account-link" to="/account">
+              {user.name}
+            </Link>
+          ) : null}
           <ThemeToggle />
           <button type="button" className="btn btn--secondary" onClick={logout}>
             Log out
