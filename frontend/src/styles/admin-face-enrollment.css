@@ -718,6 +718,163 @@
   font-size: 0.78rem;
 }
 
+/* --- Bulk import -----------------------------------------------------
+
+   The panel that enrols a whole class from a folder, sitting between the
+   roster's summary line and the roster itself. It is a section of the
+   roster panel rather than a card of its own: a second card here would
+   read as a second screen, and the thing it reports on -- who still has
+   no samples -- is the list directly below it.
+
+   Set off by a rule above rather than a border box, which is the
+   lightest mark that says "a different job from the list below" without
+   drawing a second container inside a card.
+
+   The page's own measurements are unchanged by this panel, and that was
+   measured rather than assumed: the whole page was rendered with the
+   panel present and with it removed at 320/360/375/414/480/481/636/
+   768/1024/1440, comparing the page measure, the picker's line count,
+   its first field's width, the picker's height, the roster's height,
+   its first row's height, .fe-action's height and .fe-summary's height
+   -- 10 widths, 80 comparisons, 0 differences. The panel is a sibling
+   inside the roster card, not a change to what surrounds it, and the
+   480 breakpoint and the (pointer: coarse) rule below still key off
+   exactly what they did before. */
+.fe-import {
+  margin: var(--space-16) 0 0;
+  padding: var(--space-16) 0 0;
+  border-top: 1px solid var(--border);
+}
+
+/* .fe-subtitle already sizes the heading this reuses; only the leading
+   margin differs, because this one starts a section rather than
+   following a control group. */
+.fe-import .fe-subtitle {
+  margin: 0 0 var(--space-8);
+}
+
+.fe-import .fe-guide {
+  margin: 0 0 var(--space-12);
+}
+
+/* The naming rule is the whole contract of this panel, so the two
+   examples are set as code -- a file name is a literal, and a
+   proportional face makes `aarti.desai@example.edu.jpg` read as prose
+   the admin can paraphrase. --surface on the card's --bg is the same
+   inversion .fe-file's button uses. */
+.fe-import-example {
+  padding: 1px 4px;
+  color: var(--text-h);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Long enough to wrap mid-token on a phone rather than force the
+     paragraph wider than the measure. */
+  overflow-wrap: anywhere;
+}
+
+/* File field, Import, and Clear on one wrapping line -- the same shape
+   .fe-capture-form uses for the single-photo controls directly below,
+   so the two read as the same kind of control group. align-items:
+   flex-end so the buttons sit on the field's baseline rather than
+   floating beside its label.
+
+   Measured 2026-08-30, page measure and control lines by viewport:
+
+     1440   measure 820   ONE line, controls 84.2
+     1024   measure 820   ONE line, controls 84.2
+      768   measure 704   ONE line, controls 84.2
+      636   measure 572   ONE line, controls 84.2  -- the last width
+                          where the field and both buttons share a line
+      481   measure 417   two lines, controls 140.3
+      480   measure 448   two lines, controls 140.3
+      414   measure 382   two lines, controls 140.3
+      360   measure 328   two lines, controls 140.3
+      320   measure 288   two lines, controls 140.3
+
+   Two lines takes two shapes and the height is the same either way, so
+   neither needs a breakpoint: from 480 to 481 it is field + Import with
+   Clear wrapped, and at 414 and below the field takes its own line with
+   both buttons beneath. flex-wrap alone produces all three, which is
+   why this block declares no media query of its own.
+
+   The lines above are counted by each child's BOTTOM edge, not its top.
+   align-items: flex-end means the 84.2px field and a 44.1px button on
+   the SAME line have different tops and one bottom -- counting tops
+   reports every width as wrapped and is how a measurement lies about a
+   row that never moved.
+
+   No (pointer: coarse) rule, and the measurement is why: .fe-btn does
+   not restyle .btn, so both buttons are 44.1px tall at every width
+   above, and the file input is 52.1px. Both already clear the 44px
+   target that .fe-action -- restyled to 0.78rem and 35.7px -- has to
+   buy back below. */
+.fe-import-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: flex-end;
+}
+
+/* Selection size, live progress, and the final tally all render here,
+   one at a time, inside the aria-live region. One hook for all three so
+   the line does not change height as it changes text -- a progress
+   counter that reflowed the panel under the button being watched would
+   be its own defect. */
+.fe-import-status {
+  margin: var(--space-12) 0 0;
+  color: var(--text-h);
+  font-size: 0.85rem;
+}
+
+.fe-import-group {
+  margin: var(--space-16) 0 0;
+}
+
+/* The count leads the title, as a pill, because the number is what is
+   scanned: "3 Not registered" is read in one fixation and the words
+   only qualify it. Composed from .pill and its existing tones -- no new
+   variant, and nothing here restyles one. */
+.fe-import-group-title {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  margin: 0 0 var(--space-4);
+  color: var(--text-h);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fe-import-count {
+  flex: none;
+}
+
+/* A result row is a roster row: same hairline list, same identity
+   column. It carries no action -- there is nothing to press on a line
+   that has already happened -- so it needs none of .fe-row's trailing
+   button geometry, and only the message below the metadata is new. */
+.fe-import-result .fe-identity {
+  gap: var(--space-2);
+}
+
+.fe-import-file {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* The server's own sentence about why a photo did not register. Full
+   width of the row and slightly recessed: it is an explanation, not a
+   label, and it is what the admin acts on. */
+.fe-import-message {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 /* --- A picker select takes its line, to 407px ------------------------
 
    Five .fe-field, basis 180, growing, capped at 280, in a 16px-gapped

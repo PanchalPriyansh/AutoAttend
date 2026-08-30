@@ -43,6 +43,20 @@ MAX_VIDEO_BYTES = 25 * 1024 * 1024
 # and make the 400 below unreachable.
 MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024
 
+# How many photos one bulk-import request may carry.
+#
+# Not the real bound on a batch, and deliberately so: MAX_IMPORT_FILES x
+# MAX_IMAGE_BYTES is 50 MB, well above the MAX_REQUEST_BYTES ceiling
+# Werkzeug already refuses beyond, so a batch of ten maximal images is
+# rejected as a 413 before this constant is consulted. Raising the global
+# ceiling to fit them would weaken the guard on every other route.
+#
+# What this bounds is the *work* one request may ask for. Encoding is
+# synchronous and CPU-bound, so a request holds a worker for as long as
+# its photos take to encode; ten keeps that short enough to report
+# progress between batches and cheap enough to retry when one fails.
+MAX_IMPORT_FILES = 10
+
 ALLOWED_CONTENT_TYPES = ("image/jpeg", "image/png", "image/webp")
 
 # What a browser produces from a file picker or a MediaRecorder capture.
@@ -82,6 +96,53 @@ def require_image(data, content_type):
     return _require_media(
         data, content_type, "image", ALLOWED_CONTENT_TYPES, MAX_IMAGE_BYTES
     )
+
+
+def require_import_count(count):
+    """The batch-size rule, applied to the number of parts alone.
+
+    Separate from require_import_files so a caller can apply it *before*
+    reading anything: the route knows how many `images` parts arrived
+    long before it has buffered their bytes, and an over-cap batch
+    should be refused without paying to read one. Taking an int rather
+    than the parts themselves is what keeps that possible while this
+    module still knows nothing about Flask.
+
+    require_import_files calls it too, so the rule is written once and
+    holds however the validation is reached.
+    """
+    if count == 0:
+        raise ValidationError("At least one image is required")
+
+    if count > MAX_IMPORT_FILES:
+        raise ValidationError(
+            f"An import carries at most {MAX_IMPORT_FILES} photos at a time; "
+            f"{count} were sent."
+        )
+
+
+def require_import_files(files):
+    """Validate a whole bulk-import batch before any of it is encoded.
+
+    `files` is a list of `(filename, data, content_type)` triples -- the
+    route has already pulled the parts off the request, exactly as it
+    does for a single upload, so this module still knows nothing about
+    Flask.
+
+    Every file is checked before any is registered, and that ordering is
+    the rule rather than an implementation detail: an import that stored
+    six photos and then rejected the seventh for being a PDF would leave
+    the admin guessing which half of their folder had landed. One bad
+    part fails the request; a bad *photo* -- unreadable, no face, wrong
+    person -- is a per-file outcome the import reports, and is not this
+    function's business.
+    """
+    require_import_count(len(files))
+
+    return [
+        (filename, require_image(data, content_type))
+        for filename, data, content_type in files
+    ]
 
 
 def require_video(data, content_type):

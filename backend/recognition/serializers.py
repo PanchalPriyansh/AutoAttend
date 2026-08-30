@@ -27,6 +27,55 @@ def serialize_encodings(documents):
     return [serialize_encoding(document) for document in documents]
 
 
+# A file name is echoed back so the admin can find the photo it refers
+# to, and it is the one string in this response the client chose. It is
+# JSON-escaped like any other value, so the cap is not an injection
+# defence -- it is what stops a pathological name from dominating a
+# report of ten rows.
+MAX_REPORTED_FILENAME = 120
+
+
+def serialize_import_result(result):
+    """One row of a bulk-import report.
+
+    `result["student"]` is a raw student document or None, and goes
+    through the same `student_summary` allow-list every other roster
+    response uses -- so a bulk import cannot describe a student in a
+    shape the single-upload path would not. As everywhere else in this
+    module the dict is built from literal keys, which is why no encoding
+    can reach it: `register_encoding` returns the stored document, and
+    nothing here reads it.
+    """
+    student = result.get("student")
+    filename = result.get("filename") or ""
+
+    return {
+        "filename": filename[:MAX_REPORTED_FILENAME],
+        "status": result.get("status"),
+        "student": student_summary(student) if student else None,
+        "message": result.get("message"),
+    }
+
+
+def serialize_import_results(results):
+    return [serialize_import_result(result) for result in results]
+
+
+def serialize_import_summary(summary):
+    """The report's totals, named one by one.
+
+    Written as literal keys rather than passed through, so the four
+    statuses the API documents are the four a client can ever receive.
+    """
+    return {
+        "submitted": summary.get("submitted", 0),
+        "registered": summary.get("registered", 0),
+        "no_match": summary.get("no_match", 0),
+        "ambiguous": summary.get("ambiguous", 0),
+        "rejected": summary.get("rejected", 0),
+    }
+
+
 def serialize_enrollment_status(entry):
     """`entry` is one (student, sample_count, last_enrolled_at) triple from
     recognition.service.class_enrollment_status.
