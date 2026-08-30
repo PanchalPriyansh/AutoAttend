@@ -26,11 +26,14 @@ from auth.decorators import role_required
 from common.errors import ConflictError, NotFoundError, ValidationError
 from common.validators import parse_object_id
 from database.db import get_db
+from recognition.bulk_import import import_class_faces
 from recognition.errors import RecognitionUnavailableError
 from recognition.serializers import (
     serialize_encoding,
     serialize_encodings,
     serialize_enrollment_statuses,
+    serialize_import_results,
+    serialize_import_summary,
 )
 from recognition.service import (
     class_enrollment_status,
@@ -39,7 +42,12 @@ from recognition.service import (
     list_encodings,
     register_encoding,
 )
-from recognition.validators import require_image, require_source
+from recognition.validators import (
+    require_image,
+    require_import_count,
+    require_import_files,
+    require_source,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +115,30 @@ def _uploaded_image():
     return require_image(uploaded.read(), uploaded.mimetype)
 
 
+def _uploaded_images():
+    """Read every `images` part of a bulk import and validate the batch
+    before any of it reaches the encoder.
+
+    The same job `_uploaded_image` does for a single upload, and the same
+    boundary: this is where a Flask FileStorage stops, and
+    recognition/validators.py sees plain bytes. Werkzeug has already
+    refused a body over MAX_CONTENT_LENGTH by this point, so what is read
+    here is bounded by the same ceiling one video upload is.
+    """
+    parts = request.files.getlist("images")
+
+    # The count first, on the parts themselves: an over-cap batch is
+    # refused here without buffering a single part's bytes. Doing it
+    # after the read below would still be correct and would still refuse
+    # the request, but it would read everything it was sent in order to
+    # say no.
+    require_import_count(len(parts))
+
+    return require_import_files(
+        [(part.filename, part.read(), part.mimetype) for part in parts]
+    )
+
+
 # --- Face encodings ---------------------------------------------------
 
 
@@ -160,3 +192,41 @@ def delete_all_student_face_encodings(student_id):
 def get_class_face_enrollment(class_id):
     entries = class_enrollment_status(get_db(), parse_object_id(class_id, "id"))
     return jsonify({"students": serialize_enrollment_statuses(entries)}), 200
+
+
+# --- Bulk import ------------------------------------------------------
+
+
+@faces_bp.route("/classes/<class_id>/face-enrollment/import", methods=["POST"])
+@role_required("admin")
+def import_class_face_encodings(class_id):
+    """Register a sample for many students of one class in one request.
+
+    A 200 even when every file failed: the request was well-formed,
+    authorized, and fully processed, and the report is the body. A mixed
+    outcome is a result to be read, not an error to be caught -- and the
+    frontend's shared client turns every non-2xx into a thrown Error
+    carrying one message string, which a per-file report does not fit.
+
+    Note what this handler does not do: it never decides which student a
+    file belongs to. Nothing in the request names a student -- the server
+    resolves that from the roster, because a mis-parse attributes one
+    person's face to another and that decision belongs behind the same
+    boundary as the authorization guarding it.
+    """
+    results, summary = import_class_faces(
+        get_db(),
+        parse_object_id(class_id, "id"),
+        _uploaded_images(),
+        created_by=_acting_user_id(),
+    )
+
+    return (
+        jsonify(
+            {
+                "results": serialize_import_results(results),
+                "summary": serialize_import_summary(summary),
+            }
+        ),
+        200,
+    )

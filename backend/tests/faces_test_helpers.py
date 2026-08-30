@@ -24,6 +24,7 @@ below are short, obviously-synthetic lists of floats, never a real
 face_recognition descriptor derived from an actual photograph.
 """
 
+import io
 from datetime import datetime, timezone
 
 from academic_test_helpers import FakeHierarchyCollection, make_class, make_class_enrollment
@@ -169,10 +170,27 @@ def make_face_encoding(
     return document
 
 
+def bulk_image_parts(files):
+    """Build the value of a multi-file `images` form field
+    (22-bulk-face-enrollment-import.md), from a list of
+    `(filename, data, content_type)` triples.
+
+    Werkzeug's test client turns a dict value that is a *list* into
+    several form parts under the same field name (see
+    `werkzeug.test._iter_data`), and a `(stream, filename, content_type)`
+    tuple entry into one file part -- so `data={"images":
+    bulk_image_parts(files)}` produces exactly what
+    `request.files.getlist("images")` reads on the server side, mirroring
+    how a browser submits `<input type="file" multiple>`.
+    """
+    return [(io.BytesIO(data), filename, content_type) for filename, data, content_type in files]
+
+
 __all__ = [
     "make_fake_faces_db",
     "make_face_encoding",
     "make_user",
     "make_class",
     "make_class_enrollment",
+    "bulk_image_parts",
 ]

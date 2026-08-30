@@ -43,6 +43,38 @@ export function deleteAllFaceEncodings(studentId) {
   return request(`/api/students/${studentId}/face-encodings`, { method: 'DELETE' })
 }
 
+/**
+ * Register a face sample for many students of one class in ONE request.
+ *
+ * `files` is a batch of File objects, already sized to fit by
+ * utils/fileBatches.js. This function deliberately does not loop: the
+ * caller sends batches one after another so it can report progress
+ * between them, and an API function that hid several requests behind one
+ * call would make that impossible.
+ *
+ * Note what is *not* sent: no resolved student, and no mapping. Only the
+ * files go, each under the repeated part name `images`, and the server
+ * matches each file name against the class roster itself — the ID in the
+ * name is data to be resolved there, never a claim the client has already
+ * settled and the server should trust. That is the whole security
+ * property of the feature — a mis-parse here would attribute one
+ * person's face to another — so the client never proposes a match, it
+ * only displays the one the server made.
+ *
+ * The file's own name is the payload: it is what the server matches on,
+ * so it is passed through untouched rather than renamed the way
+ * registerFaceEncoding renames a nameless canvas Blob.
+ */
+export function importClassFaceEncodings(classId, files) {
+  const body = new FormData()
+  for (const file of files) body.append('images', file, file.name)
+
+  return request(`/api/classes/${classId}/face-enrollment/import`, {
+    method: 'POST',
+    body,
+  }).then((data) => ({ results: data.results ?? [], summary: data.summary ?? {} }))
+}
+
 export function listClassFaceEnrollment(classId) {
   // The response key is `students`: a row is a student plus how many samples
   // they have, not an encoding record.

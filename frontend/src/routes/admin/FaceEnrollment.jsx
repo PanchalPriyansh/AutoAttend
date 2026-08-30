@@ -7,6 +7,7 @@ import {
   registerFaceEncoding,
 } from '../../api/faces'
 import AppShell from '../../components/layout/AppShell'
+import BulkFaceImport from '../../components/admin/BulkFaceImport'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
 import FaceCapture from '../../components/admin/FaceCapture'
 
@@ -276,6 +277,12 @@ function FaceEnrollment() {
               </p>
             )}
           </div>
+
+          {/* Above the roster, because it is what an admin does *before*
+              working through the list one student at a time -- and its
+              own report is what tells them which students the list will
+              still show as unenrolled. */}
+          <BulkFaceImport classId={classId} onImported={refresh} disabled={pending} />
 
           <ul className="fe-items">
             {roster.map((row) => {
