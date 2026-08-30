@@ -126,12 +126,24 @@ class FakeUsersCollection:
     def find_one_and_update(self, query, update, return_document=None):
         """Applies `update["$set"]` to the first matching document.
 
-        Only `$set` is modelled -- nothing in `users/service.py` uses any
-        other update operator. Enforces the `uniq_email` index the same
-        way `insert_one` does, so a duplicate-email `PUT` raises
-        `DuplicateKeyError` for the caller to translate into a 409.
+        `$set` and `$inc` are modelled, and both are applied in the one
+        call the way MongoDB applies them -- `set_user_password` writes
+        `password_hash` and increments `token_version` in a single update
+        precisely so the two can never be seen apart, and a fake that
+        dropped one would make that guarantee untestable while every
+        assertion still looked green.
+
+        `$inc` on a field the document does not have creates it at the
+        increment value, which is what MongoDB does and is the live-data
+        case: user documents written before
+        24-invalidate-tokens-on-password-change have no `token_version`.
+
+        Enforces the `uniq_email` index the same way `insert_one` does,
+        so a duplicate-email `PUT` raises `DuplicateKeyError` for the
+        caller to translate into a 409.
         """
         set_fields = (update or {}).get("$set", {})
+        inc_fields = (update or {}).get("$inc", {})
         for user in self._users:
             if not _matches(user, query):
                 continue
@@ -145,6 +157,8 @@ class FakeUsersCollection:
                         "E11000 duplicate key error collection: users index: uniq_email"
                     )
             user.update(set_fields)
+            for field, amount in inc_fields.items():
+                user[field] = user.get(field, 0) + amount
             return dict(user)
         return None
 
@@ -164,14 +178,22 @@ def make_user(
     role="student",
     is_active=True,
     institute_id=None,
+    token_version=None,
 ):
     """Builds a raw `users` document as it would be stored in MongoDB.
 
     `password` is hashed here (never stored in plaintext), matching the
     schema.py note that dates must be real BSON datetimes.
+
+    `token_version` is **omitted by default**, and deliberately so: that
+    is the shape of every user document written before
+    24-invalidate-tokens-on-password-change, and leaving it out means the
+    whole existing suite exercises auth/tokens.py's absent-means-zero
+    path for free. Pass an explicit int only when a test needs a session
+    to start from a known version.
     """
     now = datetime.now(timezone.utc)
-    return {
+    document = {
         "_id": ObjectId(),
         "name": name,
         "email": email,
@@ -182,3 +204,6 @@ def make_user(
         "created_at": now,
         "updated_at": now,
     }
+    if token_version is not None:
+        document["token_version"] = token_version
+    return document

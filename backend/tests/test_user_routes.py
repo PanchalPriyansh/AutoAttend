@@ -1789,3 +1789,276 @@ class TestCsrfEnforcementOnMutatingEndpoints:
             )
 
         assert response.status_code == 201
+
+
+# --------------------------------------------------------------------
+# 24-invalidate-tokens-on-password-change
+# --------------------------------------------------------------------
+
+
+class TestAdminResetEndsTheTargetsSessions:
+    """DoD 4, 5, 18.
+
+    The admin reset carries no code for any of this. `set_user_password`
+    is the one function that writes a password, the version bump lives
+    inside it, and that is the whole mechanism -- which is the point:
+    the self-service change and the admin reset cannot drift apart
+    because there is nothing here to drift.
+    """
+
+    def test_reset_strands_the_targets_refresh_token(self, app_instance, monkeypatch):
+        admin = make_user(email="reset1@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="subject1@college.test", password="old-password-1", role="student"
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        # The subject is signed in on their own device, in their own
+        # cookie jar, before the admin touches anything.
+        subject_client = app_instance.test_client()
+        _login(subject_client, "subject1@college.test", "old-password-1")
+        assert (
+            subject_client.post(
+                "/api/auth/refresh", headers=_refresh_csrf_headers(subject_client)
+            ).status_code
+            == 200
+        ), "precondition: the subject session works before the reset"
+
+        admin_client = app_instance.test_client()
+        _login(admin_client, "reset1@college.test", FAKE_PASSWORD)
+        reset = admin_client.put(
+            f"/api/users/{subject['_id']}/password",
+            json={"password": "new-password-1"},
+            headers=_csrf_headers(admin_client),
+        )
+
+        assert reset.status_code == 200
+        assert (
+            subject_client.post(
+                "/api/auth/refresh", headers=_refresh_csrf_headers(subject_client)
+            ).status_code
+            == 401
+        )
+
+    def test_reset_bumps_the_targets_version_by_one(self, app_instance, monkeypatch):
+        admin = make_user(email="reset2@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="subject2@college.test",
+            password="old-password-1",
+            role="student",
+            token_version=3,
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "reset2@college.test", FAKE_PASSWORD)
+            client.put(
+                f"/api/users/{subject['_id']}/password",
+                json={"password": "new-password-1"},
+                headers=_csrf_headers(client),
+            )
+
+        assert fake_db[USERS].find_one({"_id": subject["_id"]})["token_version"] == 4
+
+    def test_reset_does_not_re_issue_any_cookie(self, app_instance, monkeypatch):
+        """Rule 7. It acts on a named user who is normally not the
+        caller, and there is no cookie of theirs to replace. An admin who
+        points it at themselves is resetting their own password, and
+        being signed out everywhere is the right outcome.
+        """
+        admin = make_user(email="reset3@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="subject3@college.test", password="old-password-1", role="student"
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "reset3@college.test", FAKE_PASSWORD)
+            response = client.put(
+                f"/api/users/{subject['_id']}/password",
+                json={"password": "new-password-1"},
+                headers=_csrf_headers(client),
+            )
+
+        assert not [
+            c
+            for c in response.headers.getlist("Set-Cookie")
+            if c.startswith(("access_token_cookie=", "refresh_token_cookie="))
+        ]
+
+    def test_reset_response_never_carries_the_version(self, app_instance, monkeypatch):
+        """DoD 21: the counter is internal."""
+        admin = make_user(email="reset4@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="subject4@college.test", password="old-password-1", role="student"
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "reset4@college.test", FAKE_PASSWORD)
+            response = client.put(
+                f"/api/users/{subject['_id']}/password",
+                json={"password": "new-password-1"},
+                headers=_csrf_headers(client),
+            )
+
+        assert "token_version" not in response.get_data(as_text=True)
+
+
+class TestStatusChangesLeaveTheVersionAlone:
+    """DoD 18. A version bump means "this credential was replaced".
+
+    Deactivation is a different fact and is enforced by a different
+    check -- refresh re-reads `is_active` -- so stretching the counter to
+    cover it is how a counter stops meaning anything.
+    """
+
+    def test_deactivating_does_not_change_the_version(self, app_instance, monkeypatch):
+        admin = make_user(email="status1@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="target1@college.test",
+            password=FAKE_PASSWORD,
+            role="student",
+            token_version=2,
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "status1@college.test", FAKE_PASSWORD)
+            response = client.put(
+                f"/api/users/{subject['_id']}/status",
+                json={"is_active": False},
+                headers=_csrf_headers(client),
+            )
+
+        assert response.status_code == 200
+        assert fake_db[USERS].find_one({"_id": subject["_id"]})["token_version"] == 2
+
+    def test_reactivating_does_not_change_the_version(self, app_instance, monkeypatch):
+        admin = make_user(email="status2@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="target2@college.test",
+            password=FAKE_PASSWORD,
+            role="student",
+            is_active=False,
+            token_version=5,
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "status2@college.test", FAKE_PASSWORD)
+            response = client.put(
+                f"/api/users/{subject['_id']}/status",
+                json={"is_active": True},
+                headers=_csrf_headers(client),
+            )
+
+        assert response.status_code == 200
+        assert fake_db[USERS].find_one({"_id": subject["_id"]})["token_version"] == 5
+
+    def test_an_ordinary_profile_update_does_not_change_the_version(
+        self, app_instance, monkeypatch
+    ):
+        admin = make_user(email="status3@college.test", password=FAKE_PASSWORD, role="admin")
+        subject = make_user(
+            email="target3@college.test",
+            password=FAKE_PASSWORD,
+            role="student",
+            token_version=1,
+        )
+        fake_db = make_fake_users_db(users=[admin, subject])
+        _patch_db(monkeypatch, fake_db)
+
+        with app_instance.test_client() as client:
+            _login(client, "status3@college.test", FAKE_PASSWORD)
+            # PUT replaces the full set of editable fields, so all three
+            # are required -- an omitted key is a 400, not "unchanged".
+            response = client.put(
+                f"/api/users/{subject['_id']}",
+                json={
+                    "name": "A New Name",
+                    "email": "target3@college.test",
+                    "institute_id": None,
+                },
+                headers=_csrf_headers(client),
+            )
+
+        assert response.status_code == 200
+        assert fake_db[USERS].find_one({"_id": subject["_id"]})["token_version"] == 1
+
+
+class TestCreatedAccountsCarryAnExplicitVersion:
+    """DoD 13: a document written from now on says what it is rather than
+    relying on auth/tokens.py's absent-means-zero default, which exists
+    for documents written before 24.
+    """
+
+    def test_admin_created_user_starts_at_zero(self, app_instance, monkeypatch):
+        with app_instance.test_client() as client:
+            fake_db, headers = _login_as(monkeypatch, client, "admin")
+
+            response = client.post(
+                "/api/users",
+                json={
+                    "name": "New Student",
+                    "email": "brandnew@college.test",
+                    "password": FAKE_PASSWORD,
+                    "role": "student",
+                },
+                headers=headers,
+            )
+
+        assert response.status_code == 201
+        stored = fake_db[USERS].find_one({"email": "brandnew@college.test"})
+        assert stored["token_version"] == 0
+        assert "token_version" not in response.get_data(as_text=True)
+
+
+class TestTokenVersionNeverLeaksFromUserManagementEndpoints:
+    """DoD 21, the admin-facing half: `serialize_user` is built from a
+    literal allow-list (users/serializers.py), so `token_version` is
+    structurally unable to reach `GET /api/users`, `GET /api/users/<id>`,
+    or `PUT /api/users/<id>`. A target with an explicit, non-zero version
+    is used so a leak would be visible even though the value itself is
+    never asserted -- only the key's absence is.
+    """
+
+    def test_list_and_get_responses_never_contain_token_version(
+        self, app_instance, monkeypatch
+    ):
+        target = make_user(
+            email="versioned@college.test",
+            password=FAKE_PASSWORD,
+            role="student",
+            token_version=6,
+        )
+        with app_instance.test_client() as client:
+            _, headers = _login_as(monkeypatch, client, "admin", extra_users=[target])
+
+            list_response = client.get("/api/users")
+            get_response = client.get(f"/api/users/{target['_id']}")
+            update_response = client.put(
+                f"/api/users/{target['_id']}",
+                json={"name": "Versioned", "email": "versioned@college.test", "institute_id": None},
+                headers=headers,
+            )
+            status_response = client.put(
+                f"/api/users/{target['_id']}/status", json={"is_active": True}, headers=headers
+            )
+
+        for label, response in (
+            ("list", list_response),
+            ("get", get_response),
+            ("update", update_response),
+            ("status", status_response),
+        ):
+            assert response.status_code == 200, f"{label} failed: {response.get_json()}"
+            assert "token_version" not in response.get_data(as_text=True), (
+                f"token_version leaked in the {label} response"
+            )

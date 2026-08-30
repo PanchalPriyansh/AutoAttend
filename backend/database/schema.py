@@ -48,6 +48,23 @@ USERS_VALIDATOR = {
             "is_active": {"bsonType": "bool"},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"},
+            # Bumped by users/service.py::set_user_password every time a
+            # password is written; a refresh token carries the value it
+            # was minted under, so changing a password strands every
+            # refresh token issued before it (24-invalidate-tokens-on-
+            # password-change). "int" is BSON int32, which is what both
+            # `$inc` and an explicit 0 produce -- verified against a live
+            # server, including that a double is rejected.
+            #
+            # Deliberately NOT in `required`. MongoDB validates the whole
+            # document on update, so requiring it would make every user
+            # document written before this feature unwritable -- PUT
+            # /api/users/<id> and .../status would start failing against
+            # the live database until somebody ran a backfill. Optional,
+            # plus "absent means 0" in auth/tokens.py, means there is no
+            # backfill and no ordering dependency between deploying this
+            # code and running `flask init-db`.
+            "token_version": {"bsonType": "int"},
         },
     }
 }

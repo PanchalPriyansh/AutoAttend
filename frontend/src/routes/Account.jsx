@@ -188,9 +188,23 @@ function Account() {
             </button>
           </form>
 
+          {/* Written from the observed behaviour, not from the backend's
+              intent. Verified in a browser: the changing session keeps
+              working (the response hands it a replacement refresh
+              cookie), a second session signed in beforehand is refused
+              at its very next refresh, and what survives in that second
+              session is only its unexpired access token -- at most
+              JWT_ACCESS_TOKEN_EXPIRES, 15 minutes.
+
+              The old wording said the other session "can keep working
+              for up to 15 minutes", which described the access token
+              and quietly implied the session as a whole. Before 24 that
+              was wrong by a week; it is now merely the smaller half of
+              the truth, so it leads with the outcome instead. */}
           <p className="account-note">
-            You stay signed in on this device. If you are signed in somewhere
-            else, that session can keep working for up to 15 minutes.
+            You stay signed in on this device. Anywhere else you are signed in
+            is signed out, though a device that is already open can keep
+            working for up to 15 minutes.
           </p>
         </section>
       </div>

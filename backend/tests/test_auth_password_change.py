@@ -106,16 +106,26 @@ class TestAuthorization:
     def test_written_document_has_the_same_shape_as_before(
         self, app_instance, monkeypatch
     ):
-        """The write goes through set_user_password, so only password_hash
-        and updated_at move -- no field is added, renamed, or dropped."""
+        """The write goes through set_user_password, so password_hash,
+        updated_at and token_version move and nothing else does.
+
+        `token_version` is named exactly rather than the assertion being
+        loosened to "some fields may appear": 24 added precisely one
+        field to this write, and the point of this test is that a future
+        change cannot quietly add a second.
+        """
         user = make_user(email="shape@college.edu", password=FAKE_CURRENT)
         before = set(user.keys())
+        assert "token_version" not in before, (
+            "make_user omits token_version by default, so this test also "
+            "covers the live-data case of a document written before 24"
+        )
         client, fake_db = _signed_in(app_instance, monkeypatch, user)
 
         _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
 
         after = _stored(fake_db, user)
-        assert set(after.keys()) == before
+        assert set(after.keys()) == before | {"token_version"}
         assert after["role"] == user["role"]
         assert after["email"] == user["email"]
         assert after["is_active"] is True
@@ -566,3 +576,310 @@ class TestRequireExistingPassword:
             require_existing_password({}, "old_password")
 
         assert "old_password" in str(excinfo.value)
+
+
+# --------------------------------------------------------------------
+# 24-invalidate-tokens-on-password-change
+# --------------------------------------------------------------------
+
+
+def _second_session(app_instance, fake_db, user):
+    """A SECOND client signed in as the same user, sharing one fake db.
+
+    Two clients are two cookie jars, which is the only way to express the
+    thing this feature is about: one session changes the password and the
+    other must stop working, both against the same account.
+
+    `fake_db` is checked rather than merely documented. The shared
+    database is a precondition of every test that calls this -- both
+    sessions must resolve to the SAME user document, or the test would
+    be watching two unrelated accounts and would pass for the wrong
+    reason.
+    """
+    assert fake_db[USERS].find_one({"_id": user["_id"]}) is not None, (
+        "the second session must share the first session's database"
+    )
+    client = app_instance.test_client()
+    assert _login(client, user["email"], FAKE_CURRENT).status_code == 200
+    return client
+
+
+def _refresh(client):
+    cookie = client.get_cookie("csrf_refresh_token", path="/")
+    assert cookie is not None, "csrf_refresh_token cookie was not set after login"
+    return client.post("/api/auth/refresh", headers={"X-CSRF-TOKEN": cookie.value})
+
+
+class TestOtherSessionsAreEnded:
+    """DoD 1, 2, 3, 9 -- the defect this feature exists to fix.
+
+    Before 24, /api/auth/refresh checked only `is_active`, so the loser
+    of these tests kept minting access tokens for the refresh cookie's
+    full seven days after the owner changed their password.
+    """
+
+    def test_another_sessions_refresh_is_dead_after_a_password_change(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="two@college.edu", password=FAKE_CURRENT)
+        changer, fake_db = _signed_in(app_instance, monkeypatch, user)
+        other = _second_session(app_instance, fake_db, user)
+
+        assert _refresh(other).status_code == 200, "precondition: it worked before"
+
+        assert (
+            _change(
+                changer, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW}
+            ).status_code
+            == 200
+        )
+
+        assert _refresh(other).status_code == 401
+
+    def test_the_stale_refresh_stays_dead_on_repeated_attempts(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="retry@college.edu", password=FAKE_CURRENT)
+        changer, fake_db = _signed_in(app_instance, monkeypatch, user)
+        other = _second_session(app_instance, fake_db, user)
+
+        _change(changer, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        for _ in range(3):
+            response = _refresh(other)
+            assert response.status_code == 401
+            # The point is that no FRESH access token is minted -- the
+            # client still holds the one login gave it, which expires on
+            # its own; what must never happen is this session renewing
+            # itself, which is what it did for seven days before 24.
+            assert not [
+                c
+                for c in response.headers.getlist("Set-Cookie")
+                if c.startswith("access_token_cookie=")
+            ]
+
+    def test_stale_version_is_indistinguishable_from_a_deactivated_account(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 3. The refusal must not tell a holder of stolen cookies
+        WHY they were stopped: "your password just changed" is itself
+        information about the account.
+        """
+        changed_user = make_user(email="stale@college.edu", password=FAKE_CURRENT)
+        changer, fake_db = _signed_in(app_instance, monkeypatch, changed_user)
+        stale = _second_session(app_instance, fake_db, changed_user)
+        _change(changer, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+        stale_response = _refresh(stale)
+
+        deactivated_user = make_user(email="off@college.edu", password=FAKE_CURRENT)
+        deactivated_db = _patch_db(monkeypatch, [deactivated_user])
+        deactivated_client = app_instance.test_client()
+        assert (
+            _login(deactivated_client, "off@college.edu", FAKE_CURRENT).status_code
+            == 200
+        )
+        deactivated_db[USERS].find_one_and_update(
+            {"_id": deactivated_user["_id"]}, {"$set": {"is_active": False}}
+        )
+        deactivated_response = _refresh(deactivated_client)
+
+        assert stale_response.status_code == deactivated_response.status_code == 401
+        assert stale_response.get_data() == deactivated_response.get_data()
+
+
+class TestActingSessionSurvives:
+    """DoD 6, 7, 8 -- and 23's rule 8, which this must not break.
+
+    The naive implementation of this feature signs the caller out too:
+    the bump strands their own refresh token along with everybody
+    else's. That failure is invisible for fifteen minutes and then drops
+    the user at /login for the crime of changing their password.
+    """
+
+    def test_response_sets_a_fresh_refresh_cookie_scoped_to_the_refresh_path(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="reissue@college.edu", password=FAKE_CURRENT)
+        client, _ = _signed_in(app_instance, monkeypatch, user)
+
+        response = _change(
+            client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW}
+        )
+
+        set_cookies = response.headers.getlist("Set-Cookie")
+        refresh_cookies = [
+            c for c in set_cookies if c.startswith("refresh_token_cookie=")
+        ]
+        assert len(refresh_cookies) == 1, set_cookies
+        assert "Path=/api/auth/refresh" in refresh_cookies[0]
+
+    def test_the_access_cookie_is_not_re_issued(self, app_instance, monkeypatch):
+        """Nothing invalidated it, so replacing it would change what the
+        user holds without changing what is true, and would quietly
+        extend a session from a response about a credential.
+        """
+        user = make_user(email="noaccess@college.edu", password=FAKE_CURRENT)
+        client, _ = _signed_in(app_instance, monkeypatch, user)
+
+        response = _change(
+            client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW}
+        )
+
+        assert not [
+            c
+            for c in response.headers.getlist("Set-Cookie")
+            if c.startswith("access_token_cookie=")
+        ]
+
+    def test_the_changer_can_still_refresh(self, app_instance, monkeypatch):
+        user = make_user(email="survives@college.edu", password=FAKE_CURRENT)
+        client, _ = _signed_in(app_instance, monkeypatch, user)
+
+        _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        assert _refresh(client).status_code == 200
+
+    def test_the_changer_survives_while_the_other_session_dies(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 9: both outcomes hold at once, for one account."""
+        user = make_user(email="both@college.edu", password=FAKE_CURRENT)
+        changer, fake_db = _signed_in(app_instance, monkeypatch, user)
+        other = _second_session(app_instance, fake_db, user)
+
+        _change(changer, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        assert _refresh(changer).status_code == 200
+        assert _refresh(other).status_code == 401
+
+    def test_the_changer_can_still_reach_an_ordinary_endpoint(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="stillme@college.edu", password=FAKE_CURRENT)
+        client, _ = _signed_in(app_instance, monkeypatch, user)
+
+        _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        assert client.get("/api/auth/me").status_code == 200
+
+    def test_response_body_is_unchanged_and_carries_no_version(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 8 and 21: the counter is internal. It travels in a signed
+        cookie and in MongoDB, and nowhere else.
+        """
+        user = make_user(email="body@college.edu", password=FAKE_CURRENT)
+        client, _ = _signed_in(app_instance, monkeypatch, user)
+
+        response = _change(
+            client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW}
+        )
+
+        assert response.get_json() == {"message": "Password changed"}
+        assert "token_version" not in response.get_data(as_text=True)
+
+
+class TestVersionMovesOnlyOnASuccessfulWrite:
+    """DoD 5, 19, 20. A failed attempt must not strand anybody."""
+
+    def test_a_successful_change_bumps_the_version_by_one(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(
+            email="bump@college.edu", password=FAKE_CURRENT, token_version=4
+        )
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+
+        _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        assert _stored(fake_db, user)["token_version"] == 5
+
+    def test_a_document_without_the_field_gains_it_at_one(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 10: the live-data case, a user written before 24."""
+        user = make_user(email="fresh@college.edu", password=FAKE_CURRENT)
+        assert "token_version" not in user
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+
+        _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        assert _stored(fake_db, user)["token_version"] == 1
+
+    def test_the_hash_and_the_version_move_together(self, app_instance, monkeypatch):
+        """DoD 5: one update, so the document is never observable with a
+        new hash and an old version, which is the state the feature
+        exists to prevent.
+        """
+        user = make_user(
+            email="together@college.edu", password=FAKE_CURRENT, token_version=0
+        )
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+
+        _change(client, {"current_password": FAKE_CURRENT, "new_password": FAKE_NEW})
+
+        stored = _stored(fake_db, user)
+        assert verify_password(FAKE_NEW, stored["password_hash"])
+        assert stored["token_version"] == 1
+
+    def test_a_wrong_current_password_leaves_the_version_alone(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 19: a failed attempt must not end anyone's sessions,
+        otherwise the endpoint becomes a way to log a user out by
+        guessing wrongly at their password.
+        """
+        user = make_user(
+            email="wrong@college.edu", password=FAKE_CURRENT, token_version=2
+        )
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+
+        response = _change(
+            client, {"current_password": "not-the-password", "new_password": FAKE_NEW}
+        )
+
+        assert response.status_code == 403
+        assert _stored(fake_db, user)["token_version"] == 2
+
+    def test_a_wrong_current_password_does_not_end_another_session(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="wrong2@college.edu", password=FAKE_CURRENT)
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+        other = _second_session(app_instance, fake_db, user)
+
+        _change(
+            client, {"current_password": "not-the-password", "new_password": FAKE_NEW}
+        )
+
+        assert _refresh(other).status_code == 200
+
+    def test_a_no_op_change_leaves_the_version_alone(self, app_instance, monkeypatch):
+        """DoD 20: refused at 400 before any write."""
+        user = make_user(
+            email="noop@college.edu", password=FAKE_CURRENT, token_version=3
+        )
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+
+        response = _change(
+            client, {"current_password": FAKE_CURRENT, "new_password": FAKE_CURRENT}
+        )
+
+        assert response.status_code == 400
+        assert _stored(fake_db, user)["token_version"] == 3
+
+    def test_logout_does_not_change_the_version(self, app_instance, monkeypatch):
+        """DoD 17: logout clears cookies on one device and says nothing
+        about the credential, so another device keeps working.
+        """
+        user = make_user(email="out@college.edu", password=FAKE_CURRENT, token_version=1)
+        client, fake_db = _signed_in(app_instance, monkeypatch, user)
+        other = _second_session(app_instance, fake_db, user)
+
+        assert (
+            client.post("/api/auth/logout", headers=_csrf_header(client)).status_code
+            == 200
+        )
+
+        assert _stored(fake_db, user)["token_version"] == 1
+        assert _refresh(other).status_code == 200

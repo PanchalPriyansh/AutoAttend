@@ -213,6 +213,28 @@ class TestCreateUser:
         assert "_id" in user
         assert db[USERS].find_one({"_id": user["_id"]}) is not None
 
+    def test_writes_token_version_zero_explicitly(self):
+        """24-invalidate-tokens-on-password-change, DoD 13.
+
+        `create_user` is the one function both `flask create-admin` and
+        `POST /api/users` (via `create_managed_user`) call to insert a
+        document -- neither adds any code of its own for this field, so
+        proving it here proves it for both callers at once, without
+        needing to drive the CLI command through click's prompts.
+        """
+        db = make_fake_db([])
+
+        user = create_user(
+            db,
+            name="Fresh Admin",
+            email="fresh-admin@college.edu",
+            password="a-fake-test-password",
+            role="admin",
+        )
+
+        assert user["token_version"] == 0
+        assert db[USERS].find_one({"_id": user["_id"]})["token_version"] == 0
+
     def test_raises_duplicate_email_error_on_a_second_insert_with_the_same_email(self):
         db = make_fake_db([])
         create_user(
@@ -301,3 +323,16 @@ class TestToSafeProfile:
         profile = to_safe_profile(user)
 
         assert profile["institute_id"] == str(institute_id)
+
+    def test_safe_profile_never_includes_token_version(self):
+        """24-invalidate-tokens-on-password-change, "APIs": token_version
+        is internal and must never reach `to_safe_profile`'s output, which
+        backs both the login response and GET /api/auth/me. A document
+        with an explicit, non-zero version is used so this proves the
+        field is excluded rather than merely absent from the source.
+        """
+        user = make_user(token_version=9)
+
+        profile = to_safe_profile(user)
+
+        assert "token_version" not in profile

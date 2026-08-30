@@ -10,13 +10,22 @@ accounts created here must be byte-for-byte the same shape as the one
 `flask create-admin` bootstraps, or the login path would treat them
 differently.
 
-Known limitation: resetting a password does not invalidate an access
-token already issued to that user, which stays valid for up to
-JWT_ACCESS_TOKEN_EXPIRES (15 minutes). Deactivation is bounded the same
-way, since POST /api/auth/refresh re-checks `is_active` before minting a
-new access token. Closing that window needs a token blocklist or a
-token-version claim, which is a change of its own and deliberately out of
-scope here.
+Writing a password invalidates the sessions established with the old
+one. `set_user_password` bumps `users.token_version` in the same update
+that writes the hash, and POST /api/auth/refresh refuses a refresh token
+stamped with an older value -- so an admin reset ends the target's other
+sessions, exactly as a self-service change does, without either path
+carrying code for it. See auth/tokens.py.
+
+What that leaves open is bounded and deliberate: an *access* token
+already issued stays usable until it expires, for up to
+JWT_ACCESS_TOKEN_EXPIRES (15 minutes), because nothing checks a version
+on it -- doing so would add a database read to every authenticated route
+in the project. Deactivation is bounded the same way, since refresh
+re-checks `is_active` before minting a new access token. Before
+24-invalidate-tokens-on-password-change that bound was wrong rather than
+merely loose: refresh checked only `is_active`, and the refresh cookie
+lives seven days.
 """
 
 import re
@@ -27,6 +36,7 @@ from pymongo.errors import DuplicateKeyError
 
 from auth.passwords import hash_password
 from auth.service import DuplicateEmailError, create_user, normalize_email
+from auth.tokens import TOKEN_VERSION_CLAIM
 from common.errors import ConflictError, DuplicateError, NotFoundError
 from database.schema import INSTITUTES, USERS
 
@@ -156,9 +166,30 @@ def set_user_status(db, user_id, *, is_active, acting_user_id):
 
 
 def set_user_password(db, user_id, *, password):
+    """Write a new password hash and strand the sessions built on the old one.
+
+    The single place this project writes `password_hash` on an existing
+    user, which is why the version bump lives here: the self-service
+    change (POST /api/auth/password) and the admin reset (PUT
+    /api/users/<id>/password) both come through, so they cannot behave
+    differently, and a third caller cannot be added that forgets.
+
+    `$set` and `$inc` go in one update on purpose. Two writes would leave
+    a window -- however short -- in which the new hash is live and every
+    token minted under the old one still is too, which is precisely the
+    state this exists to prevent.
+
+    Callers that hold the acting user's own cookies are responsible for
+    re-issuing them; routes/auth.py does this, and routes/users.py
+    deliberately does not (it acts on a named user who is normally not
+    the caller, and there is no cookie of theirs to replace).
+    """
     user = db[USERS].find_one_and_update(
         {"_id": user_id},
-        {"$set": {"password_hash": hash_password(password), "updated_at": _now()}},
+        {
+            "$set": {"password_hash": hash_password(password), "updated_at": _now()},
+            "$inc": {TOKEN_VERSION_CLAIM: 1},
+        },
         return_document=ReturnDocument.AFTER,
     )
 

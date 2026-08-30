@@ -39,11 +39,17 @@ class InactiveAccountError(AppError):
 
     Raised when the identity in an otherwise-valid access token no longer
     resolves to an active user: deleted, or deactivated since the token
-    was issued. 05-admin-user-management deferred token invalidation, so a
-    deactivated account keeps a usable access token for up to
-    JWT_ACCESS_TOKEN_EXPIRES (15 minutes); re-reading `is_active` from the
-    database is what stops that window being used to set a new password
-    and walk back in.
+    was issued. A deactivated account keeps a usable ACCESS token until it
+    expires, for up to JWT_ACCESS_TOKEN_EXPIRES (15 minutes), because
+    nothing checks the database on an ordinary request; re-reading
+    `is_active` here is what stops that window being used to set a new
+    password and walk back in.
+
+    24-invalidate-tokens-on-password-change closed the far larger window
+    that sat beside this one -- a refresh token outliving the password it
+    was minted under, for up to seven days -- but it deliberately did not
+    add a per-request check, so the 15 minutes above is real and remains
+    the reason this re-read exists.
 
     The message is deliberately the same generic "Authentication required"
     the rest of the blueprint uses, so this cannot be used to tell a
