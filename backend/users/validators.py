@@ -92,6 +92,34 @@ def require_password(body, field_name="password"):
     return value
 
 
+def require_existing_password(body, field_name="current_password"):
+    """Return a password offered as *proof*, not one being set.
+
+    Deliberately does NOT call validate_password_length. The minimum
+    describes what a new password must be, not what an existing one
+    already is: if MIN_PASSWORD_LENGTH is ever raised, enforcing it here
+    would reject exactly the people whose stored password is now too
+    short -- the ones who most need to change it.
+
+    Not trimmed, for the same reason require_password is not. Only the
+    empty string is refused; a whitespace-only value is a real (if
+    strange) password and fails *verification* rather than validation,
+    which is the honest answer and also the one that does not leak
+    whether it was close.
+
+    The value itself is never echoed back in the message.
+    """
+    value = body.get(field_name)
+    if value is None:
+        raise ValidationError(f"{field_name} is required")
+    if not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string")
+    if not value:
+        raise ValidationError(f"{field_name} cannot be blank")
+
+    return value
+
+
 def require_bool(body, field_name):
     """Require a real JSON boolean -- "true" and 1 are rejected.
 

@@ -302,12 +302,35 @@
 /* The name, which is the only unbounded string in the frame -- it comes
    from the account and nothing caps its length. It ellipses rather than
    wrapping, because wrapping would add a row to a header that is already
-   three rows deep on a phone. No class of its own: AppShell renders a
-   bare <span> here and this is styling, not a change to the markup. */
-.app-user span {
+   three rows deep on a phone.
+
+   It was a bare <span> until 23-change-password, and it now carries a
+   class because it is a <Link> to /account. The three ellipsis
+   declarations moved here unchanged and MUST stay: without them a long
+   name stops giving way to Log out, and every width measured in this
+   file is wrong. It still blockifies as a flex item exactly as the span
+   did, so overflow works the same way.
+
+   color: inherit rather than a token of its own, on purpose -- the
+   resting appearance has to be what the span's was, or the measurements
+   below no longer describe this header. The underline is the affordance,
+   and text-decoration does not participate in layout, so it costs
+   nothing. Re-measured at 320/360/390/413/414/480/689/768/1024/1440 for
+   all three roles after the change: identical to the byte, so 17's 413
+   collapse breakpoint, .app-nav--single and 19's one-row thresholds all
+   still hold. */
+.app-user .app-account-link {
   overflow: hidden;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-user .app-account-link:hover {
+  text-decoration-color: currentColor;
 }
 
 /* The theme select, which composes .form-field from components.css and

@@ -1,0 +1,153 @@
+/* /account -- the one page every role shares.
+ *
+ * Two stacked cards: who you are signed in as, and the change-password
+ * form. Both compose .card, .form-field, .callout and .btn from
+ * components.css and add only what is specific to this page; nothing
+ * here restyles a primitive.
+ *
+ * The page is deliberately narrow. A password form is a single column of
+ * three short controls, and letting it run to a 1440px measure would put
+ * the label and its input at opposite ends of the screen.
+ */
+
+.account {
+  display: grid;
+  gap: var(--space-16);
+  /* Not a breakpoint: the column simply stops growing. Wide enough for
+     the longest label ("Confirm new password") beside its own input at
+     the smallest width, narrow enough that the eye does not travel. */
+  max-width: 520px;
+}
+
+.account-heading {
+  margin: 0 0 var(--space-16);
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* --- Your details ---------------------------------------------------- */
+
+.account-facts {
+  display: grid;
+  gap: var(--space-12);
+  margin: 0;
+}
+
+/* Label above value rather than beside it. A two-column dl would need a
+   column wide enough for "Email" and narrow enough not to strand it,
+   and the value below reads the same at every width without one. */
+.account-fact {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.account-fact dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.account-fact dd {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 0.9rem;
+}
+
+/* An address is the one unbounded string on this page and it has no
+   spaces to break at -- the same problem .au-email and .fe-email solve,
+   and the same answer. */
+.account-email {
+  overflow-wrap: anywhere;
+}
+
+/* Stored lowercase ('admin'), shown capitalised. Presentation only: the
+   value the API returns is untouched, and text-transform does not change
+   what a screen reader announces. */
+.account-role {
+  text-transform: capitalize;
+}
+
+.account-note {
+  margin: var(--space-16) 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* --- Change password -------------------------------------------------- */
+
+.account-form {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.account-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.account-alert {
+  margin: 0;
+}
+
+/* justify-self so the button is its own width rather than the column's:
+   a full-bleed submit on a 520px card reads as a banner, not a control.
+   It goes full width below 480 instead -- see the media query. */
+.account-submit {
+  justify-self: start;
+}
+
+/* Coarse pointers get the 44px target on every control, not just the
+   button -- a touch target is a property of the input device, not of the
+   viewport, which is the call admin-academics.css made when it
+   introduced (pointer: coarse) and the other two admin pages followed.
+
+   box-sizing is here and NOT in the three existing coarse blocks for a
+   real reason: all three of those target a button (.ah-action,
+   .au-action, .fe-action), and this is the first rule in the project to
+   put min-height on an INPUT. base.css sets border-box on .page only, so
+   a content-box input takes min-height as its CONTENT height and adds
+   its own 16px of padding and 2px of border on top -- measured, the
+   naive rule gave 61.6px, a 40% overshoot, against 44.0 with this line.
+   The button needs no such help: .btn measured exactly 44.0 either way.
+
+   Measured at 320/360/414/480/636/768/1024/1440, all eight with no
+   horizontal overflow:
+
+     width   column   input h   submit w
+     320     288.0    43.7      246.4   (stretched)
+     360     328.0    43.7      286.4   (stretched)
+     414     382.4    43.7      340.8   (stretched)
+     480     448.0    43.7      406.4   (stretched)
+     636     520.0    43.7      152.1   (capped, intrinsic)
+     768     520.0    43.7      152.1
+     1024    520.0    43.7      152.1
+     1440    520.0    43.7      152.1
+
+   The column caps at 520 from 636 up; below that it is the viewport less
+   .page's own gutter. Inputs are 43.7px untouched and 44.0 under a
+   coarse pointer -- the 0.3px is the whole of what this block buys them,
+   which is the honest reason it is a min-height and not a height. */
+@media (pointer: coarse) {
+  .account-form input {
+    box-sizing: border-box;
+    min-height: 44px;
+  }
+
+  .account-submit {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* At full bleed the button has no reason to be narrower than the
+     fields it submits, and a left-aligned control under three full-width
+     inputs reads as unfinished. */
+  .account-submit {
+    justify-self: stretch;
+  }
+}

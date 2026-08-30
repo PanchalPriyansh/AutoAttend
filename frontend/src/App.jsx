@@ -9,6 +9,7 @@ import AttendanceCapture from './routes/faculty/AttendanceCapture'
 import AttendanceHistory from './routes/faculty/AttendanceHistory'
 import StudentDashboard from './routes/StudentDashboard'
 import AttendanceOverview from './routes/student/AttendanceOverview'
+import Account from './routes/Account'
 import NotFound from './routes/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -86,6 +87,17 @@ function App() {
         element={
           <ProtectedRoute role="student">
             <AttendanceOverview />
+          </ProtectedRoute>
+        }
+      />
+      {/* No `role` prop, which ProtectedRoute already reads as "any
+          signed-in user": all three roles have equal standing over their
+          own account. */}
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute>
+            <Account />
           </ProtectedRoute>
         }
       />
