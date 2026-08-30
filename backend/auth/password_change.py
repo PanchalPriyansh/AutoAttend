@@ -15,6 +15,13 @@ users/service.py::set_user_password, so a password changed here is
 byte-for-byte what an admin reset already writes. Two modules writing the
 same credential field is how they drift.
 
+That write also bumps `token_version`, which strands every refresh token
+minted under the old password -- so a change made here ends the account's
+other sessions without this module carrying any code for it. The updated
+document is returned partly for that reason: it holds the new version,
+and routes/auth.py mints this caller's replacement refresh cookie from
+it. Nothing about sessions or cookies is decided here.
+
 No password, and no part of one -- not its length, not a prefix -- is
 ever logged or placed in an exception message here.
 """

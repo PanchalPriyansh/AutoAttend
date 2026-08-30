@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
+    get_jwt,
     get_jwt_identity,
     jwt_required,
     set_access_cookies,
@@ -15,6 +16,7 @@ from pymongo.errors import PyMongoError
 from auth.errors import InactiveAccountError, IncorrectPasswordError
 from auth.password_change import change_password
 from auth.service import authenticate_user, get_user_by_id, to_safe_profile
+from auth.tokens import is_token_current, refresh_claims_for
 from common.errors import NotFoundError, ValidationError
 from database.db import get_db
 from users.validators import require_existing_password, require_password
@@ -88,7 +90,14 @@ def login():
 
     identity = str(user["_id"])
     access_token = create_access_token(identity=identity, additional_claims={"role": user["role"]})
-    refresh_token = create_refresh_token(identity=identity)
+    # The refresh token is stamped with the password version current at
+    # login; /refresh compares the stamp to the document, so this session
+    # dies the moment the password behind it is replaced. The ACCESS
+    # token deliberately carries no such claim -- nothing reads one, and
+    # a claim nobody checks looks like a guarantee it is not.
+    refresh_token = create_refresh_token(
+        identity=identity, additional_claims=refresh_claims_for(user)
+    )
 
     response = jsonify(to_safe_profile(user))
     set_access_cookies(response, access_token)
@@ -99,9 +108,27 @@ def login():
 @auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)
 def refresh():
+    """Mint a new access token, if the session behind this one still stands.
+
+    Three ways it does not, and they are answered identically on purpose:
+    the account is gone, the account is deactivated, or the password the
+    session was established with has since been replaced. A caller
+    holding stolen cookies must not be able to tell which -- the refusal
+    would otherwise report whether an account still exists and whether
+    somebody has just changed their password.
+
+    The version check is what makes the 15 minutes this project quotes
+    elsewhere true. Before it, refresh asked only about `is_active`, so a
+    refresh cookie -- which lives seven days -- kept minting access
+    tokens for a week after the owner changed their password.
+    """
     identity = get_jwt_identity()
     user = get_user_by_id(get_db(), identity)
-    if user is None or not user.get("is_active", False):
+    if (
+        user is None
+        or not user.get("is_active", False)
+        or not is_token_current(get_jwt(), user)
+    ):
         return jsonify({"error": "Authentication required"}), 401
 
     access_token = create_access_token(identity=identity, additional_claims={"role": user["role"]})
@@ -135,10 +162,25 @@ def change_own_password():
     Nothing is logged here. A failed attempt carries the submitted
     password in the caller's hand, and the surest way never to write one
     to a log file is to have no log statement on the path at all.
+
+    A successful change ends every OTHER session on the account, and
+    keeps this one. The write bumps `token_version`, which strands every
+    refresh token minted under the old password -- including this
+    caller's -- so the response hands this session a replacement. Without
+    it, 23's promise that you stay signed in on this device would hold
+    for fifteen minutes and then drop the user at /login for the crime of
+    changing their password.
+
+    Only the refresh cookie is replaced. The access cookie is untouched
+    because nothing invalidated it: re-issuing would change what the user
+    holds without changing what is true, and would quietly extend a
+    session from a response whose subject is a credential. The one real
+    side effect is named rather than hidden -- the new refresh cookie
+    restarts that cookie's seven-day clock.
     """
     body = request.get_json(silent=True) or {}
 
-    change_password(
+    user = change_password(
         get_db(),
         get_jwt_identity(),
         # The current password is validated as present and non-empty only;
@@ -152,8 +194,19 @@ def change_own_password():
 
     # Deliberately not the profile, not updated_at, not the id: a write
     # endpoint that returns a document invites the client to start
-    # trusting it as a read.
-    return jsonify({"message": "Password changed"}), 200
+    # trusting it as a read. The version is not in here either -- it is
+    # an internal counter, and it travels in a signed cookie only.
+    # `user` is the document AFTER the write, so both the identity and
+    # the version come from it -- reading the version from anywhere else
+    # would race the very change being made.
+    identity = str(user["_id"])
+
+    response = jsonify({"message": "Password changed"})
+    set_refresh_cookies(
+        response,
+        create_refresh_token(identity=identity, additional_claims=refresh_claims_for(user)),
+    )
+    return response, 200
 
 
 @auth_bp.route("/me", methods=["GET"])

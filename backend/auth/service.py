@@ -70,6 +70,11 @@ def create_user(db, name, email, password, role, institute_id=None):
         "role": role,
         "institute_id": ObjectId(institute_id) if institute_id else None,
         "is_active": True,
+        # Written explicitly so a new document says what it is, rather
+        # than relying on auth/tokens.py's absent-means-zero default --
+        # which exists for documents created before
+        # 24-invalidate-tokens-on-password-change, not as the norm.
+        "token_version": 0,
         "created_at": now,
         "updated_at": now,
     }

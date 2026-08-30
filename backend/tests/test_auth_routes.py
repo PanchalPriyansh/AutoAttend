@@ -32,6 +32,8 @@ test-only values.
 
 import pytest
 from auth_test_helpers import make_fake_db, make_user
+from database.schema import USERS
+from flask_jwt_extended import create_refresh_token, decode_token, get_csrf_token
 
 FAKE_PASSWORD = "a-fake-test-password-1"
 
@@ -454,3 +456,216 @@ class TestRoleRequiredEnforcement:
             response = client.get("/api/test-only/admin-only")
 
         assert response.status_code == 401
+
+
+# --------------------------------------------------------------------
+# 24-invalidate-tokens-on-password-change
+# --------------------------------------------------------------------
+
+
+def _install_refresh_token(app, client, token):
+    """Give `client` a refresh cookie built outside the login route.
+
+    Used to hold a token this codebase can no longer mint: one with no
+    `token_version` claim, which is what every refresh cookie issued
+    before 24 looks like. The CSRF cookie has to be planted alongside it
+    and has to match, since JWT_COOKIE_CSRF_PROTECT is on -- the value
+    is carried inside the token itself, which is what get_csrf_token
+    reads (decoding it, hence the app context).
+    """
+    with app.app_context():
+        csrf = get_csrf_token(token)
+    client.set_cookie("refresh_token_cookie", token, path="/api/auth/refresh")
+    client.set_cookie("csrf_refresh_token", csrf, path="/")
+
+
+def _refresh(client):
+    return client.post("/api/auth/refresh", headers=_refresh_csrf_header(client))
+
+
+class TestRefreshCarriesTheTokenVersion:
+    """The claim exists and says what the document says (DoD contract for
+    login; the checking half lives in test_auth_password_change.py).
+    """
+
+    def test_login_stamps_the_users_version_into_the_refresh_token(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(
+            email="stamp@college.edu", password=FAKE_PASSWORD, token_version=6
+        )
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _login(client, "stamp@college.edu", FAKE_PASSWORD)
+            token = client.get_cookie(
+                "refresh_token_cookie", path="/api/auth/refresh"
+            ).value
+            with app_instance.app_context():
+                claims = decode_token(token)
+
+        assert claims["token_version"] == 6
+
+    def test_login_stamps_zero_for_a_document_without_the_field(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="stamp0@college.edu", password=FAKE_PASSWORD)
+        assert "token_version" not in user
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _login(client, "stamp0@college.edu", FAKE_PASSWORD)
+            token = client.get_cookie(
+                "refresh_token_cookie", path="/api/auth/refresh"
+            ).value
+            with app_instance.app_context():
+                claims = decode_token(token)
+
+        assert claims["token_version"] == 0
+
+    def test_the_access_token_carries_no_version_claim(
+        self, app_instance, monkeypatch
+    ):
+        """Rule 9: nothing reads a version on an access token, and a
+        claim nobody checks reads like a guarantee it is not.
+        """
+        user = make_user(
+            email="noclaim@college.edu", password=FAKE_PASSWORD, token_version=2
+        )
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _login(client, "noclaim@college.edu", FAKE_PASSWORD)
+            token = client.get_cookie("access_token_cookie", path="/").value
+            with app_instance.app_context():
+                claims = decode_token(token)
+
+        assert "token_version" not in claims
+        assert claims["role"] == "student"
+
+
+class TestTokensMintedBeforeThisFeature:
+    """DoD 11 and 12: deploying 24 must not sign anybody out.
+
+    A refresh token in the wild right now carries no `token_version`
+    claim, and the user document it points at has no `token_version`
+    field. Both read as 0, so they match and the session continues --
+    until that account's first password change, which is the moment it
+    is supposed to stop.
+    """
+
+    def _pre_24_token(self, app_instance, user):
+        """A refresh token exactly as 03-authentication minted them:
+        identity only, no additional claims."""
+        with app_instance.app_context():
+            return create_refresh_token(identity=str(user["_id"]))
+
+    def test_a_claimless_token_still_refreshes_against_a_fieldless_document(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="legacy@college.edu", password=FAKE_PASSWORD)
+        assert "token_version" not in user
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _install_refresh_token(
+                app_instance, client, self._pre_24_token(app_instance, user)
+            )
+            response = _refresh(client)
+
+        assert response.status_code == 200
+
+    def test_a_claimless_token_still_refreshes_against_a_document_at_zero(
+        self, app_instance, monkeypatch
+    ):
+        """The other half of the same case: accounts created after 24
+        carry an explicit 0, and a token from before it must still
+        match."""
+        user = make_user(
+            email="legacy0@college.edu", password=FAKE_PASSWORD, token_version=0
+        )
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _install_refresh_token(
+                app_instance, client, self._pre_24_token(app_instance, user)
+            )
+            response = _refresh(client)
+
+        assert response.status_code == 200
+
+    def test_a_claimless_token_is_rejected_once_the_account_moves_on(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="legacy1@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _install_refresh_token(
+                app_instance, client, self._pre_24_token(app_instance, user)
+            )
+            assert _refresh(client).status_code == 200, "precondition"
+
+            # One password change on this account, by any route.
+            fake_db[USERS].find_one_and_update(
+                {"_id": user["_id"]}, {"$inc": {"token_version": 1}}
+            )
+
+            assert _refresh(client).status_code == 401
+
+    def test_a_deactivated_account_is_still_rejected_regardless_of_version(
+        self, app_instance, monkeypatch
+    ):
+        """The is_active check did not move or weaken."""
+        user = make_user(
+            email="legacy2@college.edu", password=FAKE_PASSWORD, token_version=0
+        )
+        fake_db = _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _install_refresh_token(
+                app_instance, client, self._pre_24_token(app_instance, user)
+            )
+            fake_db[USERS].find_one_and_update(
+                {"_id": user["_id"]}, {"$set": {"is_active": False}}
+            )
+
+            assert _refresh(client).status_code == 401
+
+
+class TestTokenVersionNeverAppearsInPublicResponses:
+    """DoD 21: the counter travels in a signed cookie and in MongoDB and
+    nowhere else -- `to_safe_profile` (login, /me) never grows the field.
+
+    Each user carries an explicit, non-zero version so this proves the
+    key is excluded rather than merely absent from the source document.
+    """
+
+    def test_login_response_body_never_contains_token_version(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(
+            email="noleaklogin@college.edu", password=FAKE_PASSWORD, token_version=3
+        )
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            response = _login(client, "noleaklogin@college.edu", FAKE_PASSWORD)
+
+        assert response.status_code == 200
+        assert "token_version" not in response.get_data(as_text=True)
+
+    def test_me_response_body_never_contains_token_version(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(
+            email="noleakme@college.edu", password=FAKE_PASSWORD, token_version=3
+        )
+        _patch_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            _login(client, "noleakme@college.edu", FAKE_PASSWORD)
+            response = client.get("/api/auth/me")
+
+        assert response.status_code == 200
+        assert "token_version" not in response.get_data(as_text=True)

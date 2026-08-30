@@ -237,6 +237,30 @@ class TestUsersValidatorSpecificContract:
         assert properties["is_active"]["bsonType"] == "bool"
         assert properties["password_hash"]["bsonType"] == "string"
 
+    def test_token_version_is_a_declared_int_property(self):
+        """24-invalidate-tokens-on-password-change. "int" is BSON int32,
+        which is what both `$inc` and an explicit 0 produce -- verified
+        against a live server, where a double is rejected."""
+        properties = schema.USERS_VALIDATOR["$jsonSchema"]["properties"]
+
+        assert properties["token_version"]["bsonType"] == "int"
+
+    def test_token_version_is_not_required(self):
+        """The whole migration story, and it must not be "tightened" by a
+        later edit.
+
+        MongoDB validates the entire document on update, so requiring
+        this would make every user document written before 24 unwritable
+        -- PUT /api/users/<id> and .../status would start failing against
+        the live database until somebody ran a backfill. Optional, plus
+        absent-means-zero in auth/tokens.py, means there is no backfill
+        and no ordering dependency between deploying the code and
+        running `flask init-db`.
+        """
+        required = schema.USERS_VALIDATOR["$jsonSchema"]["required"]
+
+        assert "token_version" not in required
+
 
 class TestObjectIdReferenceFields:
     """Per spec/CLAUDE.md: hierarchy levels reference their parent via
