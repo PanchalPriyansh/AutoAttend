@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 function Login() {
@@ -76,9 +76,20 @@ function Login() {
             {submitting ? 'Logging in…' : 'Log in'}
           </button>
         </form>
+        {/* Below the form rather than beside the password label: the
+            card is 288px wide at 320, and a right-aligned link on the
+            label row is the first thing to collide with a long one. */}
+        <p className="auth-forgot">
+          <Link to="/forgot-password">Forgot your password?</Link>
+        </p>
+        {/* Reworded by 25-forgot-password: "if you cannot sign in,
+            contact them" was the whole truth until a self-service reset
+            existed, and would now send people to a person for something
+            they can do themselves. What still needs an administrator is
+            everything else — there is no public sign-up. */}
         <p className="auth-note">
           Accounts are created by your college administrator. AutoAttend has no
-          public sign-up — if you cannot sign in, contact them.
+          public sign-up, so if you do not have an account, contact them.
         </p>
       </main>
     </div>

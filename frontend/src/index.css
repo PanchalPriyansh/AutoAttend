@@ -15,7 +15,9 @@
      <component>   a component rendered by more than one page, after the
                    primitives it composes and before every page that
                    renders it, so any of them could override it
-     login         signed out, renders no shell
+     auth-screen   the signed-out screen, shared by the two pages
+                   that render it -- before both of them
+     <signed-out page>  after the screen it sits in
      shell         the frame the nine signed-in pages sit in
      <page>        one file per page, after the frame it sits in and
                    after every component it renders
@@ -26,6 +28,14 @@
    it -- ConfirmDialog -- became confirm-dialog.css above. Nothing in
    this project is styled by a file named after something other than
    what it styles any more.
+
+   `login.css` became `auth-screen.css` with 25-forgot-password.md,
+   and it is the same rule arriving at a screen rather than a component:
+   /login and /forgot-password render the whole of it, so it belongs to
+   neither of them. No declaration changed in the rename -- 51 before,
+   the same 51 after -- and it sits before both pages so either can
+   override it with a plain later selector, which is why
+   forgot-password.css follows it directly.
 
    There are three shared-component files, and they all exist for the
    same reason: a component rendered by several pages belongs to none of
@@ -53,7 +63,8 @@
 @import './styles/components.css';
 @import './styles/confirm-dialog.css';
 @import './styles/portal-card.css';
-@import './styles/login.css';
+@import './styles/auth-screen.css';
+@import './styles/forgot-password.css';
 @import './styles/shell.css';
 @import './styles/student-dashboard.css';
 @import './styles/student-attendance.css';

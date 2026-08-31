@@ -70,6 +70,17 @@ def _is_role_portal_namespace(path, prefix):
 #     asserts a real property of the shipped feature rather than the
 #     absence of an unwritten one. If a later spec adds an admin-facing
 #     trigger, that spec owns removing this entry.
+#
+#     **This entry no longer means "no route can send mail", and the
+#     difference matters.** .claude/specs/25-forgot-password.md put the
+#     first mail in this project on a request thread: POST
+#     /api/auth/forgot-password sends a one-time code synchronously,
+#     through the same notifications/mailer.py. It passes this guard
+#     because it is not a notification route -- it is transactional mail
+#     answering something the recipient just did. What the entry still
+#     asserts, exactly, is that the low-attendance SWEEP has no HTTP
+#     trigger: `flask notify-low-attendance` remains its entire trigger
+#     surface.
 OUT_OF_SCOPE_ROUTE_FRAGMENTS = [
     "prediction",
     "risk",

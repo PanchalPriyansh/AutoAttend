@@ -30,10 +30,22 @@ live MongoDB is required. All emails/passwords used are obviously-fake,
 test-only values.
 """
 
+import logging
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from auth.passwords import hash_password, verify_password
+from auth.reset_codes import (
+    CODE_TTL_MINUTES,
+    MAX_ATTEMPTS,
+    MAX_SUBMITTED_CODE_LENGTH,
+    RESEND_COOLDOWN_SECONDS,
+)
 from auth_test_helpers import make_fake_db, make_user
-from database.schema import USERS
+from database.schema import PASSWORD_RESET_CODES, USERS
 from flask_jwt_extended import create_refresh_token, decode_token, get_csrf_token
+from notifications.settings import SmtpSettings
+from notifications.errors import MailerNotConfiguredError, MailerSendError
 
 FAKE_PASSWORD = "a-fake-test-password-1"
 
@@ -669,3 +681,859 @@ class TestTokenVersionNeverAppearsInPublicResponses:
 
         assert response.status_code == 200
         assert "token_version" not in response.get_data(as_text=True)
+
+
+# --------------------------------------------------------------------
+# 25-forgot-password
+# --------------------------------------------------------------------
+
+FAKE_RESET_CODE = "482913"
+FAKE_RESET_PASSWORD = "a-fake-reset-password-1"
+GENERIC_REQUEST_BODY = {
+    "message": "If that email is registered, a reset code has been sent."
+}
+INVALID_CODE_BODY = {"error": "That code is not valid or has expired."}
+
+
+def _patch_reset_db(monkeypatch, users=None, reset_codes=None):
+    fake_db = make_fake_db(users, reset_codes)
+    monkeypatch.setattr("routes.auth.get_db", lambda: fake_db)
+    return fake_db
+
+
+def _forgot(client, email=None):
+    body = {} if email is None else {"email": email}
+    return client.post("/api/auth/forgot-password", json=body)
+
+
+def _reset(client, email=None, code=None, new_password=None):
+    body = {}
+    if email is not None:
+        body["email"] = email
+    if code is not None:
+        body["code"] = code
+    if new_password is not None:
+        body["new_password"] = new_password
+    return client.post("/api/auth/reset-password", json=body)
+
+
+def _fake_smtp_settings():
+    """A stand-in for what `load_smtp_settings` returns.
+
+    The real `SmtpSettings` rather than an ad-hoc object, deliberately:
+    routes/auth.py reads `.sender` and `.sender_name` off it to build the
+    message, so a double that does not carry the real shape would pass
+    while the route was broken -- and a bare object() fails with an
+    AttributeError that looks like a route bug rather than a test one.
+
+    Every value is obviously fake and nothing here opens a connection;
+    the transport is stubbed separately.
+    """
+    return SmtpSettings(
+        host="localhost.test",
+        port=1025,
+        username="fake-test-user",
+        password="fake-test-password",
+        sender="autoattend@localhost.test",
+        sender_name="AutoAttend Test",
+        use_tls=False,
+    )
+
+
+def _stub_configured_smtp(monkeypatch):
+    """Fakes routes.auth's mail path so no test opens a socket.
+
+    Returns the list of `EmailMessage`s `forgot_password` "sent" -- empty
+    when the endpoint decided not to send at all (unknown address,
+    deactivated account, or inside the cooldown).
+    """
+    sent = []
+
+    class _FakeTransport:
+        def __init__(self, settings):
+            self._settings = settings
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def send(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr("routes.auth.load_smtp_settings", lambda config: _fake_smtp_settings())
+    monkeypatch.setattr("routes.auth.SmtpTransport", _FakeTransport)
+    return sent
+
+
+def _stub_failing_smtp(monkeypatch):
+    """Like `_stub_configured_smtp`, but every send raises
+    `MailerSendError` -- for proving DoD 6."""
+
+    class _FailingTransport:
+        def __init__(self, settings):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def send(self, message):
+            raise MailerSendError("The mail server refused a message.")
+
+    monkeypatch.setattr("routes.auth.load_smtp_settings", lambda config: _fake_smtp_settings())
+    monkeypatch.setattr("routes.auth.SmtpTransport", _FailingTransport)
+
+
+def _stub_unconfigured_smtp(monkeypatch):
+    """No SMTP_* variables set -- load_smtp_settings raises before any
+    user lookup, per rule 1."""
+
+    def _raise(config):
+        raise MailerNotConfiguredError("SMTP_HOST is not set")
+
+    monkeypatch.setattr("routes.auth.load_smtp_settings", _raise)
+
+
+def _seed_reset_code(
+    fake_db,
+    user,
+    *,
+    code=FAKE_RESET_CODE,
+    attempts=0,
+    expires_at=None,
+    consumed_at=None,
+    created_at=None,
+    email=None,
+):
+    now = datetime.now(timezone.utc)
+    document = {
+        "user_id": user["_id"],
+        "code_hash": hash_password(code),
+        "expires_at": expires_at if expires_at is not None else now + timedelta(minutes=CODE_TTL_MINUTES),
+        "attempts": attempts,
+        "created_at": created_at if created_at is not None else now,
+        "email": email or user["email"],
+    }
+    if consumed_at is not None:
+        document["consumed_at"] = consumed_at
+    fake_db[PASSWORD_RESET_CODES].insert_one(document)
+    return document
+
+
+def _reset_codes_for(fake_db, user):
+    return list(fake_db[PASSWORD_RESET_CODES].find({"user_id": user["_id"]}))
+
+
+class TestForgotPasswordIsNotAnEnumerationOracle:
+    """DoD 1, 2: every dimension of "does this address have an account"
+    -- unknown, deactivated, inside its cooldown -- produces the
+    identical response as a real, sendable address.
+    """
+
+    def test_a_registered_active_address_returns_the_generic_200(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="fp-active@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+        _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = _forgot(client, "fp-active@college.edu")
+
+        assert response.status_code == 200
+        assert response.get_json() == GENERIC_REQUEST_BODY
+
+    def test_unknown_deactivated_and_cooldown_addresses_answer_identically_to_a_real_one(
+        self, app_instance, monkeypatch
+    ):
+        active = make_user(email="fp-real@college.edu", password=FAKE_PASSWORD)
+        inactive = make_user(
+            email="fp-inactive@college.edu", password=FAKE_PASSWORD, is_active=False
+        )
+        cooling = make_user(email="fp-cooling@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [active, inactive, cooling])
+        _seed_reset_code(fake_db, cooling)
+        _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            real_response = _forgot(client, "fp-real@college.edu")
+            unknown_response = _forgot(client, "fp-nobody@college.edu")
+            inactive_response = _forgot(client, "fp-inactive@college.edu")
+            cooldown_response = _forgot(client, "fp-cooling@college.edu")
+
+        responses = (real_response, unknown_response, inactive_response, cooldown_response)
+        assert {r.status_code for r in responses} == {200}
+        assert len({r.get_data() for r in responses}) == 1, (
+            "forgot-password must answer byte-identically regardless of "
+            "whether, or why, an address does not resolve"
+        )
+
+    def test_a_send_failure_still_returns_the_generic_200(self, app_instance, monkeypatch):
+        user = make_user(email="fp-failsend@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+        _stub_failing_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = _forgot(client, "fp-failsend@college.edu")
+
+        assert response.status_code == 200
+        assert response.get_json() == GENERIC_REQUEST_BODY
+
+
+class TestForgotPasswordWritesAndSends:
+    def test_a_registered_address_gets_exactly_one_usable_code_document(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="fp-write@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        sent = _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            _forgot(client, "fp-write@college.edu")
+
+        rows = _reset_codes_for(fake_db, user)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["code_hash"] != FAKE_RESET_CODE
+        assert row["attempts"] == 0
+        assert "consumed_at" not in row
+        assert row["expires_at"] > datetime.now(timezone.utc)
+        assert len(sent) == 1
+
+    def test_unknown_deactivated_and_cooldown_addresses_write_no_document_and_send_no_mail(
+        self, app_instance, monkeypatch
+    ):
+        inactive = make_user(
+            email="fp-nowrite-inactive@college.edu", password=FAKE_PASSWORD, is_active=False
+        )
+        cooling = make_user(email="fp-nowrite-cooling@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [inactive, cooling])
+        _seed_reset_code(fake_db, cooling)
+        sent = _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            _forgot(client, "fp-nowrite-unknown@college.edu")
+            _forgot(client, "fp-nowrite-inactive@college.edu")
+            _forgot(client, "fp-nowrite-cooling@college.edu")
+
+        assert _reset_codes_for(fake_db, inactive) == []
+        # cooling already had exactly the one row it started with -- a
+        # second request inside the cooldown must not add another.
+        assert len(_reset_codes_for(fake_db, cooling)) == 1
+        assert sent == []
+
+    def test_a_send_failure_still_leaves_the_written_row_in_place(
+        self, app_instance, monkeypatch
+    ):
+        """Concurrency-fix behaviour (reversed from the original design):
+        `issue_reset_code` writes the row BEFORE any mail is sent, so a
+        failed send afterwards does not roll it back -- the row holds a
+        code the user never received, which is harmless (unguessable,
+        expiring, replaced by the next request past the cooldown), and
+        removing it would hand back the cooldown slot this request just
+        claimed."""
+        user = make_user(email="fp-failwrite@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _stub_failing_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            _forgot(client, "fp-failwrite@college.edu")
+
+        rows = _reset_codes_for(fake_db, user)
+        assert len(rows) == 1
+        assert rows[0]["attempts"] == 0
+        assert "consumed_at" not in rows[0]
+
+    def test_a_send_failure_still_replaces_whatever_code_the_user_was_holding(
+        self, app_instance, monkeypatch
+    ):
+        """The price named in the module docstring: issuing claims the
+        cooldown slot and writes the new row unconditionally, so a send
+        that then fails has already replaced the previous code -- the old
+        one stops working even though the new one was never delivered."""
+        user = make_user(email="fp-keepcode@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        existing = _seed_reset_code(
+            fake_db,
+            user,
+            code=FAKE_RESET_CODE,
+            created_at=datetime.now(timezone.utc)
+            - timedelta(seconds=RESEND_COOLDOWN_SECONDS + 5),
+        )
+        _stub_failing_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            _forgot(client, "fp-keepcode@college.edu")
+
+        rows = _reset_codes_for(fake_db, user)
+        assert len(rows) == 1
+        assert rows[0]["code_hash"] != existing["code_hash"], (
+            "the old code must no longer be the one stored -- it has been "
+            "replaced even though the replacement was never delivered"
+        )
+
+
+class TestForgotPasswordValidation:
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {},
+            {"email": ""},
+            {"email": 12345},
+            {"email": "not-an-email-address"},
+        ],
+        ids=["missing", "empty", "non-string", "not-address-shaped"],
+    )
+    def test_malformed_email_is_400_and_writes_nothing(
+        self, app_instance, monkeypatch, body
+    ):
+        fake_db = _patch_reset_db(monkeypatch, [])
+        _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = client.post("/api/auth/forgot-password", json=body)
+
+        assert response.status_code == 400
+        assert fake_db[PASSWORD_RESET_CODES]._documents == []
+
+    def test_no_authentication_is_required(self, app_instance, monkeypatch):
+        user = make_user(email="fp-noauth@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+        _stub_configured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:  # no login call at all
+            response = _forgot(client, "fp-noauth@college.edu")
+
+        assert response.status_code == 200
+
+
+class TestForgotPasswordSmtpMisconfiguration:
+    """Rule 1: `load_smtp_settings` runs BEFORE any user lookup, so a
+    misconfigured server answers every address alike."""
+
+    def test_unconfigured_smtp_returns_503_for_a_registered_address(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="fp-noserver@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+        _stub_unconfigured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = _forgot(client, "fp-noserver@college.edu")
+
+        assert response.status_code == 503
+
+    def test_unconfigured_smtp_returns_the_same_503_for_an_unknown_address(
+        self, app_instance, monkeypatch
+    ):
+        _patch_reset_db(monkeypatch, [])
+        _stub_unconfigured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = _forgot(client, "fp-noaccount@college.edu")
+
+        assert response.status_code == 503
+
+    def test_unconfigured_smtp_response_body_names_no_setting(
+        self, app_instance, monkeypatch
+    ):
+        """The exception's own message names a variable; the HTTP body
+        must not."""
+        _patch_reset_db(monkeypatch, [])
+        _stub_unconfigured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            response = _forgot(client, "fp-anything@college.edu")
+
+        assert "SMTP_HOST" not in response.get_data(as_text=True)
+
+    def test_unconfigured_smtp_writes_no_document(self, app_instance, monkeypatch):
+        user = make_user(email="fp-nowrite-noserver@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _stub_unconfigured_smtp(monkeypatch)
+
+        with app_instance.test_client() as client:
+            _forgot(client, "fp-nowrite-noserver@college.edu")
+
+        assert _reset_codes_for(fake_db, user) == []
+
+
+class TestResetPasswordSpendsACodeAndSetsAPassword:
+    def test_the_correct_code_resets_the_password(self, app_instance, monkeypatch):
+        user = make_user(email="rp-ok@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-ok@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 200
+        assert response.get_json() == {"message": "Password reset"}
+
+    def test_the_new_password_logs_in_and_the_old_one_does_not(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-cycle@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            _reset(client, "rp-cycle@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD)
+
+            new_login = _login(client, "rp-cycle@college.edu", FAKE_RESET_PASSWORD)
+            old_login = _login(client, "rp-cycle@college.edu", FAKE_PASSWORD)
+
+        assert new_login.status_code == 200
+        assert old_login.status_code == 401
+
+    def test_the_response_sets_no_cookies_at_all(self, app_instance, monkeypatch):
+        """DoD 8: not a login -- no access, refresh, or CSRF cookie."""
+        user = make_user(email="rp-nocookie@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-nocookie@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.headers.getlist("Set-Cookie") == []
+
+    def test_the_response_body_carries_no_profile_or_id(self, app_instance, monkeypatch):
+        user = make_user(email="rp-noprofile@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-noprofile@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        text = response.get_data(as_text=True)
+        assert str(user["_id"]) not in text
+        assert "role" not in text
+        assert "email" not in text
+
+    def test_no_authentication_is_required(self, app_instance, monkeypatch):
+        user = make_user(email="rp-noauth@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:  # no login call at all
+            response = _reset(
+                client, "rp-noauth@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 200
+
+
+class TestResetPasswordCodeFailuresAreOneMessageAndNever401:
+    def test_a_wrong_code_is_400_with_the_generic_message(self, app_instance, monkeypatch):
+        user = make_user(email="rp-wrong@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(client, "rp-wrong@college.edu", "000000", FAKE_RESET_PASSWORD)
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+
+    def test_a_wrong_code_increments_attempts_and_leaves_the_code_usable(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-attempts@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            wrong = _reset(client, "rp-attempts@college.edu", "000000", FAKE_RESET_PASSWORD)
+            assert wrong.status_code == 400
+
+            rows = _reset_codes_for(fake_db, user)
+            assert len(rows) == 1
+            assert rows[0]["attempts"] == 1
+
+            correct = _reset(
+                client, "rp-attempts@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert correct.status_code == 200
+
+    def test_no_route_on_this_path_ever_returns_401(self, app_instance, monkeypatch):
+        """Rule 6: `apiFetch` retries any non-login 401, which would burn
+        a second attempt per wrong guess."""
+        user = make_user(email="rp-not401@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(client, "rp-not401@college.edu", "000000", FAKE_RESET_PASSWORD)
+
+        assert response.status_code == 400
+
+    def test_replaying_the_same_code_is_refused_and_the_password_is_unchanged(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-replay@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            first = _reset(
+                client, "rp-replay@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+            second = _reset(
+                client, "rp-replay@college.edu", FAKE_RESET_CODE, "a-fake-second-password-1"
+            )
+
+        assert first.status_code == 200
+        assert second.status_code == 400
+        assert second.get_json() == INVALID_CODE_BODY
+        stored = fake_db[USERS].find_one({"_id": user["_id"]})
+        assert verify_password(FAKE_RESET_PASSWORD, stored["password_hash"])
+        assert not verify_password("a-fake-second-password-1", stored["password_hash"])
+
+    def test_an_expired_code_is_refused_even_though_the_row_still_exists(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 12: proves expiry is enforced in code, not by a sweep --
+        there is no TTL index."""
+        user = make_user(email="rp-expired@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(
+            fake_db,
+            user,
+            code=FAKE_RESET_CODE,
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-expired@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+        assert _reset_codes_for(fake_db, user), "no sweep has run -- the row is still there"
+
+    def test_attempts_exhausted_refuses_even_the_correct_code(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-exhausted@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE, attempts=MAX_ATTEMPTS)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-exhausted@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+
+    def test_a_code_issued_for_one_account_cannot_reset_another(
+        self, app_instance, monkeypatch
+    ):
+        owner = make_user(email="rp-owner@college.edu", password=FAKE_PASSWORD)
+        bystander = make_user(email="rp-bystander@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [owner, bystander])
+        _seed_reset_code(fake_db, owner, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-bystander@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+        assert verify_password(
+            FAKE_PASSWORD,
+            fake_db[USERS].find_one({"_id": bystander["_id"]})["password_hash"],
+        )
+        assert verify_password(
+            FAKE_PASSWORD,
+            fake_db[USERS].find_one({"_id": owner["_id"]})["password_hash"],
+        )
+
+    def test_no_code_ever_issued_returns_the_generic_error(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-nocode@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-nocode@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+
+    def test_deactivated_account_between_issue_and_use_is_refused(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-deactivated@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+        fake_db[USERS].find_one_and_update(
+            {"_id": user["_id"]}, {"$set": {"is_active": False}}
+        )
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-deactivated@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+        assert verify_password(
+            FAKE_PASSWORD,
+            fake_db[USERS].find_one({"_id": user["_id"]})["password_hash"],
+        )
+
+    def test_an_unknown_email_returns_the_generic_error(self, app_instance, monkeypatch):
+        _patch_reset_db(monkeypatch, [])
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-ghost@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+
+
+class TestResetPasswordValidation:
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"code": FAKE_RESET_CODE, "new_password": FAKE_RESET_PASSWORD},
+            {"email": "", "code": FAKE_RESET_CODE, "new_password": FAKE_RESET_PASSWORD},
+            {"email": 12345, "code": FAKE_RESET_CODE, "new_password": FAKE_RESET_PASSWORD},
+            {
+                "email": "not-an-email",
+                "code": FAKE_RESET_CODE,
+                "new_password": FAKE_RESET_PASSWORD,
+            },
+        ],
+        ids=["missing-email", "empty-email", "non-string-email", "not-address-shaped"],
+    )
+    def test_a_malformed_email_is_400(self, app_instance, monkeypatch, body):
+        _patch_reset_db(monkeypatch, [])
+
+        with app_instance.test_client() as client:
+            response = client.post("/api/auth/reset-password", json=body)
+
+        assert response.status_code == 400
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"email": "rp-code@college.edu", "new_password": FAKE_RESET_PASSWORD},
+            {"email": "rp-code@college.edu", "code": "", "new_password": FAKE_RESET_PASSWORD},
+            {"email": "rp-code@college.edu", "code": 123456, "new_password": FAKE_RESET_PASSWORD},
+        ],
+        ids=["missing-code", "empty-code", "non-string-code"],
+    )
+    def test_a_malformed_code_is_400(self, app_instance, monkeypatch, body):
+        user = make_user(email="rp-code@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            response = client.post("/api/auth/reset-password", json=body)
+
+        assert response.status_code == 400
+
+    def test_a_code_longer_than_the_maximum_is_400_before_any_hash_comparison(
+        self, app_instance, monkeypatch
+    ):
+        """A code is six digits; without a ceiling a caller could post a
+        very long string and make the server hash all of it. The cap is
+        enforced by `require_bounded_string` before `reset_password_with_code`
+        is ever called, so this must not consume or even look at any
+        stored code."""
+        user = make_user(email="rp-toolong@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+        too_long_code = "1" * (MAX_SUBMITTED_CODE_LENGTH + 1)
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-toolong@college.edu", too_long_code, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        rows = _reset_codes_for(fake_db, user)
+        assert len(rows) == 1
+        assert rows[0]["attempts"] == 0
+        assert "consumed_at" not in rows[0]
+
+    def test_a_code_at_exactly_the_maximum_length_is_not_rejected_for_its_length(
+        self, app_instance, monkeypatch
+    ):
+        """The boundary itself is accepted by the length check -- it then
+        fails as an ordinary wrong code, indistinguishably from any other,
+        which is the generic 400 rather than a length-specific one."""
+        user = make_user(email="rp-atmax@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+        exactly_max_code = "1" * MAX_SUBMITTED_CODE_LENGTH
+
+        with app_instance.test_client() as client:
+            response = _reset(
+                client, "rp-atmax@college.edu", exactly_max_code, FAKE_RESET_PASSWORD
+            )
+
+        assert response.status_code == 400
+        assert response.get_json() == INVALID_CODE_BODY
+
+    def test_a_new_password_shorter_than_the_minimum_does_not_consume_the_code(
+        self, app_instance, monkeypatch
+    ):
+        """DoD 14: a length mistake must not cost the user their code."""
+        user = make_user(email="rp-short@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            short_response = _reset(client, "rp-short@college.edu", FAKE_RESET_CODE, "short")
+
+            rows = _reset_codes_for(fake_db, user)
+            assert len(rows) == 1
+            assert "consumed_at" not in rows[0]
+            assert rows[0]["attempts"] == 0
+
+            recovered_response = _reset(
+                client, "rp-short@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert short_response.status_code == 400
+        assert short_response.get_json() != INVALID_CODE_BODY
+        assert recovered_response.status_code == 200
+
+
+class TestResetPasswordInheritsSessionInvalidation:
+    """DoD 17, 18: a reset ends every existing session on the account,
+    with no reset-specific invalidation code -- inherited from
+    `set_user_password` exactly as `24` built it.
+    """
+
+    def test_a_session_established_before_the_reset_fails_its_next_refresh(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-session@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        other = app_instance.test_client()
+        assert _login(other, "rp-session@college.edu", FAKE_PASSWORD).status_code == 200
+        assert _refresh(other).status_code == 200, "precondition: it worked before"
+
+        with app_instance.test_client() as client:
+            reset_response = _reset(
+                client, "rp-session@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        assert reset_response.status_code == 200
+        assert _refresh(other).status_code == 401
+
+    def test_password_hash_and_token_version_move_together(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(
+            email="rp-together@college.edu", password=FAKE_PASSWORD, token_version=2
+        )
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            _reset(client, "rp-together@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD)
+
+        stored = fake_db[USERS].find_one({"_id": user["_id"]})
+        assert verify_password(FAKE_RESET_PASSWORD, stored["password_hash"])
+        assert stored["token_version"] == 3
+
+
+class TestResetPasswordConcurrentSubmissions:
+    """DoD 16: two submissions of the same valid code must not both
+    reset the password."""
+
+    def test_only_one_of_two_submissions_of_the_same_code_succeeds(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-race@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        with app_instance.test_client() as client:
+            first = _reset(
+                client, "rp-race@college.edu", FAKE_RESET_CODE, "a-fake-race-password-1"
+            )
+            second = _reset(
+                client, "rp-race@college.edu", FAKE_RESET_CODE, "a-fake-race-password-2"
+            )
+
+        statuses = {first.status_code, second.status_code}
+        assert statuses == {200, 400}
+        stored = fake_db[USERS].find_one({"_id": user["_id"]})
+        assert verify_password("a-fake-race-password-1", stored["password_hash"])
+        assert not verify_password("a-fake-race-password-2", stored["password_hash"])
+
+
+class TestNoSecretEverAppearsInAResponseOrLog:
+    def test_reset_password_responses_never_contain_the_code_or_a_hash(
+        self, app_instance, monkeypatch
+    ):
+        user = make_user(email="rp-leak@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+        stored_hash = _reset_codes_for(fake_db, user)[0]["code_hash"]
+
+        with app_instance.test_client() as client:
+            wrong_response = _reset(
+                client, "rp-leak@college.edu", "000000", FAKE_RESET_PASSWORD
+            )
+            right_response = _reset(
+                client, "rp-leak@college.edu", FAKE_RESET_CODE, FAKE_RESET_PASSWORD
+            )
+
+        for response in (wrong_response, right_response):
+            text = response.get_data(as_text=True)
+            assert FAKE_RESET_CODE not in text
+            assert stored_hash not in text
+            assert "000000" not in text
+
+    def test_forgot_password_never_logs_the_address(
+        self, app_instance, monkeypatch, caplog
+    ):
+        user = make_user(email="fp-quiet@college.edu", password=FAKE_PASSWORD)
+        _patch_reset_db(monkeypatch, [user])
+        _stub_configured_smtp(monkeypatch)
+
+        client = app_instance.test_client()
+        with caplog.at_level(logging.DEBUG):
+            _forgot(client, "fp-quiet@college.edu")
+
+        assert "fp-quiet@college.edu" not in caplog.text
+
+    def test_reset_password_wrong_attempt_never_logs_the_code_or_address(
+        self, app_instance, monkeypatch, caplog
+    ):
+        user = make_user(email="rp-quiet@college.edu", password=FAKE_PASSWORD)
+        fake_db = _patch_reset_db(monkeypatch, [user])
+        _seed_reset_code(fake_db, user, code=FAKE_RESET_CODE)
+
+        client = app_instance.test_client()
+        with caplog.at_level(logging.DEBUG):
+            _reset(client, "rp-quiet@college.edu", "000000", FAKE_RESET_PASSWORD)
+
+        assert FAKE_RESET_CODE not in caplog.text
+        assert "rp-quiet@college.edu" not in caplog.text

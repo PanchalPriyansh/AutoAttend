@@ -6,10 +6,10 @@ changes" + "Definition of done", extended by
 .claude/specs/07-attendance-capture.md,
 .claude/specs/08-faculty-attendance-history.md, and
 .claude/specs/10-low-attendance-notifications.md):
-  - Exactly eleven collections are declared: users, institutes, departments,
+  - Exactly twelve collections are declared: users, institutes, departments,
     semesters, courses, classes, class_enrollments, face_encodings,
-    attendance_sessions, attendance_records, and attendance_notifications --
-    no ML-related collections.
+    attendance_sessions, attendance_records, attendance_notifications, and
+    password_reset_codes -- no ML-related collections.
   - `face_encodings` joined the list with 06-face-enrollment.md, the two
     attendance collections with 07-attendance-capture.md, and
     `attendance_notifications` with 10-low-attendance-notifications.md, each
@@ -43,6 +43,7 @@ ALL_COLLECTION_NAMES = {
     schema.ATTENDANCE_SESSIONS,
     schema.ATTENDANCE_RECORDS,
     schema.ATTENDANCE_NOTIFICATIONS,
+    schema.PASSWORD_RESET_CODES,
 }
 
 # Substrings that would indicate a collection this project should not have.
@@ -110,6 +111,18 @@ EXPECTED_REQUIRED_FIELDS = {
         "total_count",
         "sent_at",
     },
+    # `consumed_at` is deliberately absent: a code is unspent until it is
+    # spent, and single use is enforced by an update conditional on the
+    # field being missing. Requiring it would make the unspent state
+    # unwritable.
+    schema.PASSWORD_RESET_CODES: {
+        "user_id",
+        "code_hash",
+        "expires_at",
+        "attempts",
+        "created_at",
+        "email",
+    },
 }
 
 # (keys, unique) signatures per collection, per spec's "Database changes"
@@ -157,6 +170,22 @@ EXPECTED_INDEX_SIGNATURES = {
     schema.ATTENDANCE_NOTIFICATIONS: {
         ((("student_id", 1), ("class_id", 1), ("sent_at", -1)), False),
     },
+    # One index, UNIQUE, and deliberately no TTL.
+    #
+    # Unique is load-bearing rather than tidy. Issuing a code is an
+    # upsert whose filter misses while a row is still inside the
+    # cooldown, so it falls through to an insert that THIS index
+    # refuses -- which is what makes the cooldown hold when requests
+    # arrive concurrently, and what stops one account ever holding two
+    # live codes (two independent MAX_ATTEMPTS budgets against it).
+    #
+    # An index carrying `expireAfterSeconds` would be reported as
+    # undeclared by database/indexes.py's planner and rebuilt WITHOUT
+    # its TTL on the next `flask init-db`; expiry is enforced in the
+    # query instead. See the comment on `expires_at` in schema.py.
+    schema.PASSWORD_RESET_CODES: {
+        ((("user_id", 1),), True),
+    },
 }
 
 
@@ -167,7 +196,7 @@ def _spec_for(collection_name):
 
 
 class TestCollectionNameConstants:
-    def test_all_eleven_collection_name_constants_are_defined(self):
+    def test_all_twelve_collection_name_constants_are_defined(self):
         assert schema.USERS == "users"
         assert schema.INSTITUTES == "institutes"
         assert schema.DEPARTMENTS == "departments"
@@ -179,17 +208,18 @@ class TestCollectionNameConstants:
         assert schema.ATTENDANCE_SESSIONS == "attendance_sessions"
         assert schema.ATTENDANCE_RECORDS == "attendance_records"
         assert schema.ATTENDANCE_NOTIFICATIONS == "attendance_notifications"
+        assert schema.PASSWORD_RESET_CODES == "password_reset_codes"
 
 
 class TestCollectionsRegistry:
-    def test_collections_declares_exactly_the_eleven_expected_names(self):
+    def test_collections_declares_exactly_the_twelve_expected_names(self):
         declared_names = {spec["name"] for spec in schema.COLLECTIONS}
 
         assert declared_names == ALL_COLLECTION_NAMES
         # Hardcoded rather than derived from COLLECTIONS: the point is to
         # notice an unplanned collection being added, which a derived count
         # would silently accept.
-        assert len(schema.COLLECTIONS) == 11
+        assert len(schema.COLLECTIONS) == 12
 
     def test_no_out_of_scope_collection_names_are_declared(self):
         for spec in schema.COLLECTIONS:

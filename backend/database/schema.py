@@ -26,6 +26,7 @@ FACE_ENCODINGS = "face_encodings"
 ATTENDANCE_SESSIONS = "attendance_sessions"
 ATTENDANCE_RECORDS = "attendance_records"
 ATTENDANCE_NOTIFICATIONS = "attendance_notifications"
+PASSWORD_RESET_CODES = "password_reset_codes"
 
 USERS_VALIDATOR = {
     "$jsonSchema": {
@@ -301,6 +302,64 @@ ATTENDANCE_NOTIFICATIONS_VALIDATOR = {
 # re-exposing what was written to a student. Nothing here holds an SMTP
 # host, a credential, or biometric data.
 
+PASSWORD_RESET_CODES_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+            "user_id",
+            "code_hash",
+            "expires_at",
+            "attempts",
+            "created_at",
+            "email",
+        ],
+        "properties": {
+            # The account the code resets, and never an email: an address
+            # corrected between issuing a code and using it must not be
+            # able to repoint a live code at a different document.
+            "user_id": {"bsonType": "objectId"},
+            # The code is stored the way a password is -- through
+            # auth/passwords.py, the one place this project turns a secret
+            # into something storable -- so a read of this collection
+            # hands over no working reset codes. The plaintext code exists
+            # only in memory, long enough to be hashed and put in one
+            # email body.
+            "code_hash": {"bsonType": "string", "minLength": 1},
+            # Enforced in application code on every read, not by a TTL
+            # index. database/indexes.py's planner compares `keys` and
+            # `unique` and reports every other option as undeclared, so an
+            # index carrying `expireAfterSeconds` would be dropped and
+            # rebuilt WITHOUT its TTL by the next `flask init-db` -- a TTL
+            # index that silently stops being one is worse than none.
+            # Teaching the planner that dimension is 20's feature, not
+            # this one. Nothing may therefore assume expired rows have
+            # been swept.
+            "expires_at": {"bsonType": "date"},
+            # Wrong guesses so far. A 6-digit code is one in 10^6 and this
+            # project has no rate limiting anywhere, so the cap read off
+            # this field is a load-bearing control rather than a courtesy.
+            # "int" is BSON int32, which is what both an explicit 0 and
+            # `$inc` produce.
+            "attempts": {"bsonType": "int"},
+            # Absent until the code is spent. Single use is enforced by an
+            # atomic update conditional on this being absent, so two
+            # simultaneous submissions of one valid code cannot both win.
+            # Deliberately NOT in `required` for that reason.
+            "consumed_at": {"bsonType": "date"},
+            "created_at": {"bsonType": "date"},
+            # Where the code was actually sent, captured at send time --
+            # the same call attendance_notifications.email makes, for the
+            # same reason: an address corrected later must not rewrite the
+            # history of where a code went.
+            "email": {"bsonType": "string", "minLength": 1},
+        },
+    }
+}
+
+# NOTE: the code itself is deliberately absent from the shape above, and
+# so is anything about the request that produced it -- no IP address, no
+# user agent. This collection holds a hash, a deadline, and a counter.
+
 COLLECTIONS = [
     {
         "name": USERS,
@@ -428,6 +487,41 @@ COLLECTIONS = [
                 "keys": [("student_id", 1), ("class_id", 1), ("sent_at", -1)],
                 "unique": False,
                 "name": "idx_student_id_class_id_sent_at",
+            },
+        ],
+    },
+    {
+        "name": PASSWORD_RESET_CODES,
+        "validator": PASSWORD_RESET_CODES_VALIDATOR,
+        "indexes": [
+            # UNIQUE, and load-bearing rather than tidy. At most one code
+            # row exists per account, and this index is what enforces it
+            # in the database rather than in application code.
+            #
+            # Issuing is an upsert whose filter matches only a row older
+            # than the cooldown (auth/reset_codes.py::reissue_filter).
+            # When a row is inside the cooldown the filter misses, the
+            # upsert falls through to an insert, and THIS index refuses
+            # it -- which is how concurrent requests are serialised. A
+            # read-then-write cooldown is no cooldown at all: every
+            # concurrent request reads before any of them writes, so all
+            # of them pass and all of them send mail, which is exactly
+            # the anonymous mail bomb the cooldown exists to prevent.
+            #
+            # It also makes "one live code per account" structural. Two
+            # live codes would give an attacker two independent
+            # MAX_ATTEMPTS budgets against one account.
+            #
+            # Keyed on `user_id` alone: the cooldown and the spend both
+            # look a row up by account, and there is only ever one, so
+            # there is nothing for a compound key to disambiguate.
+            #
+            # There is deliberately no TTL index here; see the comment on
+            # `expires_at` in PASSWORD_RESET_CODES_VALIDATOR above.
+            {
+                "keys": [("user_id", 1)],
+                "unique": True,
+                "name": "uniq_user_id",
             },
         ],
     },

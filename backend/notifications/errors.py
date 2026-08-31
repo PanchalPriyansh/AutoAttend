@@ -5,10 +5,19 @@ common/errors.py and are reused rather than redeclared, following
 attendance/errors.py's precedent: only what is genuinely new to this
 feature is declared here.
 
-Unlike every other error module in the project, these carry no HTTP
-status mapping -- nothing in this package is reachable from a route. They
-surface at a terminal, through the `notify-low-attendance` CLI command,
-which turns them into a one-line message and a non-zero exit.
+Both of these began life reachable only from a terminal, through the
+`notify-low-attendance` CLI command, which turns them into a one-line
+message and a non-zero exit. That is still the only way
+`MailerSendError` surfaces: 25-forgot-password catches it on the request
+path and answers 200 regardless, so it never becomes a status code.
+
+`MailerNotConfiguredError` is no longer terminal-only. 25-forgot-password
+put transactional mail on a request thread, and routes/auth.py maps this
+one to **503** -- deliberately before any user lookup, so a deployment
+with no SMTP configured answers the same thing to every caller instead of
+only to addresses that exist. That handler does NOT return the message
+below; it logs it and sends a generic one, because these messages name a
+setting and an anonymous caller has no business learning which.
 
 The messages below are read by whoever runs that command. They may name a
 *setting* that is missing or wrong; they must never carry its value, so
@@ -25,7 +34,11 @@ class MailerNotConfiguredError(AppError):
 
     Raised by settings.py before anything is read from the database or
     sent, so a misconfigured deployment fails immediately and completely
-    rather than half-way through a sweep with some students mailed.
+    rather than half-way through a sweep with some students mailed. On
+    the request path 25-forgot-password added, the same "before anything
+    is read" property is what keeps a 503 from depending on whether the
+    address exists -- see routes/auth.py, which maps this to 503 with a
+    generic body.
     """
 
 
