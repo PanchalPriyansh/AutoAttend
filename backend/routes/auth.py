@@ -13,13 +13,25 @@ from flask_jwt_extended import (
 )
 from pymongo.errors import PyMongoError
 
-from auth.errors import InactiveAccountError, IncorrectPasswordError
+from auth.errors import (
+    InactiveAccountError,
+    IncorrectPasswordError,
+    InvalidResetCodeError,
+)
 from auth.password_change import change_password
+from auth.password_reset import issue_reset_code, reset_password_with_code
+from auth.reset_codes import CODE_TTL_MINUTES, MAX_SUBMITTED_CODE_LENGTH
 from auth.service import authenticate_user, get_user_by_id, to_safe_profile
 from auth.tokens import is_token_current, refresh_claims_for
 from common.errors import NotFoundError, ValidationError
+from common.validators import require_bounded_string
+from config import Config
 from database.db import get_db
-from users.validators import require_existing_password, require_password
+from notifications.errors import MailerNotConfiguredError, MailerSendError
+from notifications.mailer import SmtpTransport, build_message
+from notifications.reset_messages import build_reset_body, build_reset_subject
+from notifications.settings import load_smtp_settings
+from users.validators import require_email, require_existing_password, require_password
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +85,37 @@ def _handle_incorrect_password_error(exc):
 @auth_bp.errorhandler(InactiveAccountError)
 def _handle_inactive_account_error(exc):
     return jsonify({"error": str(exc)}), 401
+
+
+@auth_bp.errorhandler(InvalidResetCodeError)
+def _handle_invalid_reset_code_error(exc):
+    """400 rather than 401 -- see the class docstring in auth/errors.py.
+    A 401 would be transparently retried by the frontend's apiFetch,
+    resubmitting the code and burning a second of the five attempts it is
+    allowed.
+    """
+    return jsonify({"error": str(exc)}), 400
+
+
+@auth_bp.errorhandler(MailerNotConfiguredError)
+def _handle_mailer_not_configured_error(exc):
+    """A deployment that cannot send mail, reported as unavailable.
+
+    The exception's own message names the setting that is missing, which
+    is right on an operator's terminal and wrong in an HTTP body: this
+    endpoint is reachable by anyone, signed out. So the message is logged
+    and a generic one is returned. notifications/settings.py guarantees
+    these messages name a setting and never its value, so logging one
+    cannot write a credential to a log file.
+
+    This is the one status /api/auth/forgot-password can return that is
+    not the generic 200 -- and it is safe precisely because it does not
+    depend on the address: load_smtp_settings runs before any user
+    lookup, so a misconfigured server answers this to everybody alike
+    rather than only to addresses that exist.
+    """
+    logger.error("Password reset is unavailable: %s", exc)
+    return jsonify({"error": "Password reset is temporarily unavailable"}), 503
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -207,6 +250,145 @@ def change_own_password():
         create_refresh_token(identity=identity, additional_claims=refresh_claims_for(user)),
     )
     return response, 200
+
+
+# The one answer POST /forgot-password gives, whatever happened. Defined
+# once so no branch can accidentally phrase its own.
+RESET_REQUESTED_MESSAGE = "If that email is registered, a reset code has been sent."
+
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    """Send a one-time code to an address, if it belongs to an account.
+
+    Unauthenticated by necessity: somebody who cannot sign in has no
+    token to present.
+
+    **The response never varies.** A registered address, an unknown one, a
+    deactivated account, and an account that was sent a code a moment ago
+    all produce the same 200 and the same body -- so this endpoint cannot
+    be asked whether somebody has an account here. `authenticate_user`
+    already burns a dummy hash so login cannot be asked that either; an
+    endpoint that answered it would hand back what login refuses to.
+
+    That extends to failure. A mail server that refuses the message is
+    logged and still answered 200, because "the send failed" is only
+    observable for an address that HAS an account, and reporting it would
+    be the oracle wearing a different hat.
+
+    The code is stored BEFORE it is sent, which is the reverse of this
+    project's send-then-record habit and is explained in
+    auth/password_reset.py. In short: the cooldown is the only thing
+    stopping this endpoint being pointed at somebody else's inbox, and a
+    cooldown checked by a read and committed after an SMTP round trip is
+    one that concurrent requests all walk past.
+
+    The one exception is a server with no SMTP configured, and it is
+    exactly why load_smtp_settings is called **before** the account is
+    looked up: that 503 is decided without reference to the address, so
+    every caller gets it alike.
+
+    This is the first mail this project sends from a request thread --
+    10 and 11 made mail CLI-only deliberately. smtplib is synchronous, so
+    this handler holds its worker for the length of one SMTP connection
+    and send (SmtpTransport's own 30-second socket timeout bounds it).
+    That is stated rather than engineered around; a queue is a different
+    feature.
+
+    Nothing on this path is logged that would say who asked, or for which
+    account.
+    """
+    body = request.get_json(silent=True) or {}
+
+    # A malformed request is a different fact from an address that does
+    # not resolve: refusing "email is required" says nothing about who
+    # has an account, so it is a 400 rather than a silent 200.
+    email = require_email(body)
+
+    smtp_settings = load_smtp_settings(Config)
+
+    pending = issue_reset_code(get_db(), email)
+
+    if pending is not None:
+        try:
+            # Built inside the try because build_message validates the
+            # recipient and raises the same MailerSendError a refused
+            # send does -- a stored address that cannot be put in a
+            # header must not become a 500.
+            with SmtpTransport(smtp_settings) as transport:
+                transport.send(
+                    build_message(
+                        sender=smtp_settings.sender,
+                        sender_name=smtp_settings.sender_name,
+                        recipient=pending.email,
+                        subject=build_reset_subject(),
+                        body=build_reset_body(
+                            pending.name, pending.code, CODE_TTL_MINUTES
+                        ),
+                    )
+                )
+        except MailerSendError:
+            # No address, no code, no user id. mailer.py has already
+            # logged the transport's own text, which it keeps free of the
+            # recipient.
+            #
+            # The row stays. It holds a code nobody received, which is
+            # harmless -- it is unguessable, it expires, and the next
+            # request past the cooldown replaces it -- and removing it
+            # here would hand back the cooldown slot this request just
+            # claimed, which is the one thing that must not become
+            # cheap.
+            logger.warning("Could not send a password reset email")
+
+    return jsonify({"message": RESET_REQUESTED_MESSAGE}), 200
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    """Spend a code and set a new password. This is not a login.
+
+    No cookie is set, no token is minted, and no profile is returned. The
+    code buys exactly one action, once, and the user then signs in
+    normally with the password they just chose -- which is what keeps
+    this from becoming a second authentication path beside /login.
+
+    `email` is required beside the code, and not for convenience: without
+    it the server would have to find *any* account holding a matching
+    code, which turns one guess in 10^6 into a birthday problem across
+    every outstanding code at once. Scoping each guess to one account is
+    what makes the attempts cap mean what it says.
+
+    Every failure of the code is one 400 with one message. See
+    auth/errors.py::InvalidResetCodeError for the six outcomes that
+    collapse into it and why each alternative is an oracle.
+
+    A successful reset ends every existing session on the account,
+    inherited from set_user_password with no code here -- and correctly,
+    since somebody resetting a forgotten password may be recovering from
+    a compromise rather than forgetfulness.
+
+    Nothing is logged on this path.
+    """
+    body = request.get_json(silent=True) or {}
+
+    email = require_email(body)
+    # Length-capped before it reaches a hash comparison. A code is six
+    # digits; without a ceiling a caller could post a megabyte and make
+    # the server hash all of it, which is free to send and not free to
+    # check. The cap is far above any real code, so it rejects abuse
+    # rather than typos.
+    code = require_bounded_string(body, "code", MAX_SUBMITTED_CODE_LENGTH)
+    # Validated BEFORE the code is spent, so a password that is merely
+    # too short costs a message and not the code -- otherwise a length
+    # mistake would send the user back to their inbox for a fresh one.
+    new_password = require_password(body, "new_password")
+
+    reset_password_with_code(get_db(), email, code, new_password=new_password)
+
+    # Deliberately not the profile and not the id: this endpoint has not
+    # authenticated anybody, and a body that looked like a login response
+    # would invite a client to treat it as one.
+    return jsonify({"message": "Password reset"}), 200
 
 
 @auth_bp.route("/me", methods=["GET"])

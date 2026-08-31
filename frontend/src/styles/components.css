@@ -94,12 +94,13 @@
     border-color 120ms ease;
 }
 
-/* Opacity only. The one disabled button in the project is login's submit,
-   which is disabled solely while the request is in flight and says
-   "Logging in..." at the same time -- the dimming agrees with a label that
-   already carries the state. Its `cursor: progress` says which kind of
-   wait it is and stays in login.css, because it is the only button that
-   means it. */
+/* Opacity only. Every disabled button in the project is a signed-out
+   submit -- login's, and the two /forgot-password stages 25 added --
+   disabled solely while the request is in flight and saying so in its
+   label at the same time ("Logging in...", "Sending...", "Resetting..."),
+   so the dimming agrees with a label that already carries the state.
+   Their `cursor: progress` says which kind of wait it is and stays in
+   auth-screen.css, because those are the only buttons that mean it. */
 .btn:disabled {
   opacity: 0.65;
 }

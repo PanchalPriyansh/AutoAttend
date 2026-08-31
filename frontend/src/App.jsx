@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Login from './routes/Login'
+import ForgotPassword from './routes/ForgotPassword'
 import AdminPortal from './routes/AdminPortal'
 import AcademicHierarchy from './routes/admin/AcademicHierarchy'
 import UserManagement from './routes/admin/UserManagement'
@@ -18,6 +19,10 @@ function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
+      {/* Public, and necessarily so: somebody who cannot sign in has no
+          token to present. The page redirects an already-signed-in user
+          to their portal itself, the same way Login does. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route
         path="/admin"
         element={

@@ -16,7 +16,7 @@ never carry a password, a hash, or any part of either.
 
 from common.errors import AppError
 
-__all__ = ["IncorrectPasswordError", "InactiveAccountError"]
+__all__ = ["IncorrectPasswordError", "InactiveAccountError", "InvalidResetCodeError"]
 
 
 class IncorrectPasswordError(AppError):
@@ -54,4 +54,35 @@ class InactiveAccountError(AppError):
     The message is deliberately the same generic "Authentication required"
     the rest of the blueprint uses, so this cannot be used to tell a
     deactivated account apart from a deleted one.
+    """
+
+
+class InvalidResetCodeError(AppError):
+    """A forgot-password code that cannot be spent -- maps to 400.
+
+    **One error for six outcomes.** No code was ever issued for that
+    address, the code is wrong, it has expired, it has already been used,
+    its attempts are exhausted, or the account has since been deactivated
+    or deleted -- all of them raise this, with the same message. Each of
+    the alternatives is an oracle: "no code has been issued" confirms the
+    address is real and unspent, "you have used all your attempts"
+    confirms the account is worth coming back to, and "that code has
+    expired" confirms the address is real. The person who mistyped a
+    digit is served just as well by one sentence, and their next step --
+    ask for another code -- is the same in every case.
+
+    **400 and not 401**, and unlike IncorrectPasswordError's 403 the
+    reason is not that the caller is authenticated (they are not; this
+    endpoint is reached signed out). It is that
+    frontend/src/api/client.js transparently refreshes and *retries* any
+    401 outside /api/auth/login and /api/auth/refresh. Here a retry would
+    resubmit the same code and burn a second of the five attempts the
+    code is allowed -- so the intuitive status would halve the user's
+    budget on every wrong guess. 23 found this for a wrong password,
+    where the cost was an extra hash; on this path the cost comes out of
+    a limited resource.
+
+    403 was considered and rejected for the opposite reason: it reads as
+    "you are known and not permitted", which credits the caller with an
+    identity they have not established.
     """

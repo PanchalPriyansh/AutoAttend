@@ -78,3 +78,26 @@ def require_end_after_start(start_date, end_date):
     """A semester must end after it starts; equal dates are rejected too."""
     if end_date <= start_date:
         raise ValidationError("end_date must be after start_date")
+
+
+def require_bounded_string(body, field_name, max_length):
+    """A required non-empty string with a ceiling on its length.
+
+    `require_non_empty_string` plus a maximum, for the case where the
+    value is about to be fed to something whose cost scales with it --
+    25-forgot-password submits a code to a password-hash comparison, and
+    without a bound a caller can post a megabyte and make the server hash
+    every byte of it. The cap belongs on the way in rather than at the
+    comparison, so nothing expensive is reached at all.
+
+    The limit is named in the message: unlike a credential, the length of
+    a code is not a secret, and a caller who genuinely sent something too
+    long deserves to know the rule.
+    """
+    value = require_non_empty_string(body, field_name)
+    if len(value) > max_length:
+        raise ValidationError(
+            f"{field_name} must be at most {max_length} characters"
+        )
+
+    return value
