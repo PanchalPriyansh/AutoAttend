@@ -37,21 +37,26 @@
    override it with a plain later selector, which is why
    forgot-password.css follows it directly.
 
-   There are three shared-component files, and they all exist for the
+   There are four shared-component files, and they all exist for the
    same reason: a component rendered by several pages belongs to none of
    them. faculty-roster-row.css is StudentStatusRow, rendered by the two
    faculty attendance pages; confirm-dialog.css is ConfirmDialog,
    rendered by six files across admin and faculty; portal-card.css is
-   PortalCard, rendered by all three landing pages. None is a
-   primitive -- components.css is for patterns with two INDEPENDENT
-   implementations, and these are single components used more than once.
+   PortalCard, rendered by all three landing pages; password-field.css
+   is PasswordInput, rendered by the seven password boxes on /login,
+   /forgot-password, /account and /admin/users. None is a primitive --
+   components.css is for patterns with two INDEPENDENT implementations,
+   and these are single components used more than once.
 
    They do not all sit at the same point, and that is not an
-   inconsistency. confirm-dialog.css and portal-card.css are here,
-   directly after the primitives, because every page that renders either
-   one is below them and neither is overridden by any of those pages --
-   the dialog renders in a fixed overlay that no page lays out, and the
-   portal card's three pages own only the grid around it.
+   inconsistency. confirm-dialog.css, portal-card.css and
+   password-field.css are here, directly after the primitives, because
+   every page that renders any of them is below them and none is
+   overridden by any of those pages -- the dialog renders in a fixed
+   overlay that no page lays out, the portal card's three pages own only
+   the grid around it, and the password box's four pages own only the
+   label, the hint and the field width around it (admin-users.css is
+   below it and could override, and does not need to).
    faculty-roster-row.css stays where it has always been, immediately
    before the two pages that render it -- it was placed there when the
    history page was built, both of those pages override it with plain
@@ -63,6 +68,7 @@
 @import './styles/components.css';
 @import './styles/confirm-dialog.css';
 @import './styles/portal-card.css';
+@import './styles/password-field.css';
 @import './styles/auth-screen.css';
 @import './styles/forgot-password.css';
 @import './styles/shell.css';

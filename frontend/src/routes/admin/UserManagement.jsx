@@ -7,6 +7,7 @@ import {
   setUserStatus,
   updateUser,
 } from '../../api/users'
+import PasswordInput from '../../components/PasswordInput'
 import AppShell from '../../components/layout/AppShell'
 import ConfirmDialog from '../../components/admin/ConfirmDialog'
 import UserForm from '../../components/admin/UserForm'
@@ -347,10 +348,9 @@ function UserManagement() {
                   <form className="au-reset" onSubmit={handleResetPassword}>
                     <span className="form-field au-field au-field--password">
                       <label htmlFor={`reset-${row.id}`}>New password</label>
-                      <input
+                      <PasswordInput
                         id={`reset-${row.id}`}
                         name="new_password"
-                        type="password"
                         value={newPassword}
                         onChange={(event) => setNewPassword(event.target.value)}
                         autoComplete="new-password"

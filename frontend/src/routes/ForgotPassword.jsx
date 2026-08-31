@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { requestPasswordReset, resetPassword } from '../api/passwordReset'
+import PasswordInput from '../components/PasswordInput'
 import { useAuth } from '../context/AuthContext'
 
 /* Three stages, one component, one route.
@@ -231,10 +232,9 @@ function ForgotPassword() {
 
                 <div className="form-field form-field--lg">
                   <label htmlFor="reset-new-password">New password</label>
-                  <input
+                  <PasswordInput
                     id="reset-new-password"
                     name="new_password"
-                    type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     autoComplete="new-password"
@@ -255,10 +255,9 @@ function ForgotPassword() {
                   <label htmlFor="reset-confirm-password">
                     Confirm new password
                   </label>
-                  <input
+                  <PasswordInput
                     id="reset-confirm-password"
                     name="confirm_password"
-                    type="password"
                     value={confirm}
                     onChange={(event) => setConfirm(event.target.value)}
                     autoComplete="new-password"

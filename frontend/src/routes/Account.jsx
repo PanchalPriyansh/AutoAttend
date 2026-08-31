@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { changePassword } from '../api/account'
+import PasswordInput from '../components/PasswordInput'
 import AppShell from '../components/layout/AppShell'
 import { useAuth } from '../context/AuthContext'
 
@@ -104,10 +105,9 @@ function Account() {
           <form className="account-form" onSubmit={handleSubmit}>
             <div className="form-field">
               <label htmlFor="current-password">Current password</label>
-              <input
+              <PasswordInput
                 id="current-password"
                 name="current_password"
-                type="password"
                 value={values.current}
                 onChange={update('current')}
                 autoComplete="current-password"
@@ -117,10 +117,9 @@ function Account() {
 
             <div className="form-field">
               <label htmlFor="new-password">New password</label>
-              <input
+              <PasswordInput
                 id="new-password"
                 name="new_password"
-                type="password"
                 value={values.next}
                 onChange={update('next')}
                 autoComplete="new-password"
@@ -138,10 +137,9 @@ function Account() {
 
             <div className="form-field">
               <label htmlFor="confirm-password">Confirm new password</label>
-              <input
+              <PasswordInput
                 id="confirm-password"
                 name="confirm_password"
-                type="password"
                 value={values.confirm}
                 onChange={update('confirm')}
                 autoComplete="new-password"

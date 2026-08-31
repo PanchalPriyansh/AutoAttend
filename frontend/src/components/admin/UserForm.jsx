@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PasswordInput from '../PasswordInput'
 
 const ROLES = ['admin', 'faculty', 'student']
 
@@ -106,10 +107,9 @@ function UserForm({ mode, user, institutes, onSubmit, onCancel }) {
       {isCreate && (
         <span className="form-field au-field">
           <label htmlFor={`${idPrefix}-password`}>Password</label>
-          <input
+          <PasswordInput
             id={`${idPrefix}-password`}
             name="password"
-            type="password"
             value={values.password}
             onChange={(event) => setField('password', event.target.value)}
             autoComplete="new-password"
