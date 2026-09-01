@@ -14,6 +14,11 @@ marks, no grades, no assessments, and no risk prediction. The machine learning
 here is the face recognition itself — a low-attendance email is a plain
 threshold check against recorded attendance, not a model output.
 
+**Status: feature-complete.** Every capability described below is built,
+front to back, and the backend suite is 1,499 passing tests. What is
+deliberately *not* here — public sign-up, marks and grades, academic-risk
+prediction — is out of scope by design, not unfinished.
+
 ---
 
 ## What it does
@@ -23,11 +28,12 @@ Three roles, each with its own portal. Accounts are created by an admin;
 
 | Role | Can do |
 |---|---|
-| **Admin** | Manage the academic hierarchy, create and deactivate users, assign faculty and enroll students, register student faces |
-| **Faculty** | Take attendance for an assigned class from a photo or video, review the proposed list before saving, then browse and edit past sessions |
+| **Admin** | Manage the academic hierarchy, create and deactivate users, assign faculty and enroll students, register student faces one photo at a time or a whole class from a folder |
+| **Faculty** | Take attendance for an assigned class from a photo or video, review the proposed list before saving, browse and edit past sessions, and export a class's register as CSV or PDF |
 | **Student** | See their own attendance per class and overall, a month-by-month trend, and how many lectures it would take to get back above the bar |
+| **Everyone** | Change their own password, recover a forgotten one by emailed code, and pick a light, dark, or system theme |
 
-Two capabilities do the actual work:
+Three capabilities do the actual work:
 
 - **Face-recognition attendance.** Faculty pick the academic context
   (institute → department → semester → course → class → date) and upload a
@@ -38,8 +44,17 @@ Two capabilities do the actual work:
   captured photo or video is never stored.
 - **Low-attendance email.** `flask notify-low-attendance` finds students below
   the configured percentage in a class they are still enrolled in and emails
-  each one a single message listing every class they are short in. It is a CLI
-  command by design: no route can send mail.
+  each one a single message listing every class they are short in. The sweep
+  is a CLI command by design — no screen and no route can trigger it, so
+  nobody can mail the whole cohort by clicking something.
+- **Password self-service.** Anyone signed in can change their own password
+  from `/account`, which ends every *other* session on the account and keeps
+  the one doing the changing. Anyone locked out can ask for a six-digit code
+  by email from `/forgot-password`: it expires in 15 minutes, is good for one
+  use and five guesses, and one account can only request one a minute. The
+  code sets a new password and signs nobody in — you then log in normally.
+  This is the one mail an HTTP request sends; the request tells you nothing
+  about whether the address exists.
 
 ---
 
@@ -49,7 +64,15 @@ Two capabilities do the actual work:
 - **Backend** — Flask REST API, Flask-JWT-Extended (HttpOnly cookies + CSRF)
 - **Database** — MongoDB
 - **Recognition** — `face_recognition` (dlib), OpenCV for video frames, NumPy
+- **PDF export** — `reportlab`; the CSV half is the standard library's `csv`
 - **Email** — the Python standard library, `smtplib` and `email`
+
+The three heavyweight pieces — dlib, OpenCV and `reportlab` — are each
+imported lazily, in one module and nowhere else, so a server missing one still
+starts and still serves everything else. Only the path that needs it answers
+`503`: without dlib, face enrollment and attendance capture; without OpenCV,
+attendance from a *video* while photos still work; without `reportlab`, the
+PDF export while CSV still works.
 
 ---
 
@@ -66,9 +89,10 @@ C++ toolchain. On Windows, install **CMake** and the **Visual Studio C++ Build
 Tools** *before* running `pip install`, or that one package will fail.
 
 If you would rather not deal with it right now, you don't have to. The
-recognition libraries are imported lazily, so **everything except face
-enrollment works without dlib** — the API starts, the full test suite passes,
-and only the face-enrollment endpoints report `503` until it is built.
+recognition libraries are imported lazily, so **everything except the two
+paths that actually look at a face works without dlib** — the API starts,
+every other route answers, and the full test suite passes. Face enrollment
+and attendance capture report `503` until it is built.
 
 ### Backend
 
@@ -175,7 +199,7 @@ flask notify-low-attendance --dry-run  # list who would be emailed; sends and
                                        # writes nothing, needs no SMTP config
 flask notify-low-attendance            # actually send
 
-pytest                                 # the full suite (1001 tests)
+pytest                                 # the full suite (1499 tests)
 pytest tests/test_auth_routes.py       # one file
 pytest -k "test_name"                  # one test
 ```

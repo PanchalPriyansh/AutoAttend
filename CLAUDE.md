@@ -380,11 +380,31 @@ Keep track of incomplete or intentionally stubbed features as the project develo
 
 Update this section when major features become implemented.
 
-### Next planned feature
+### Project status — complete, and nothing is planned
 
-Specs `01`–`24` are built. Every core capability this file describes exists, `12-app-shell` added the frame the UI work sits inside, and `13-component-vocabulary` added the primitives the remaining pages are built from.
+**The project was declared complete on 2026-08-31, and that has not been lifted.** Specs `01`–`25` are built, tested, reviewed, merged and pushed; every core capability this file describes exists, `12-app-shell` added the frame the UI work sits inside, and `13-component-vocabulary` added the primitives the remaining pages are built from. `main` is the only live branch, and the backend suite is 1499 tests.
 
-**`24-invalidate-tokens-on-password-change` is the most recent.** A backend slice whose user-facing half is one paragraph of copy, so it took the full pipeline and a browser confirmation rather than a measurement pass. It added one optional integer field and no dependency. See the `Authentication` row above.
+**Do not propose a next feature, and do not assemble a candidate list out of this file.** The deferrals recorded per feature in the table above are a record of decisions already taken — what was considered and declined, and why — not a backlog waiting to be worked through. If a new session opens on this repo, wait for what is actually asked.
+
+**The last change is not a spec.** `aa92745` "Let you check the password you are typing" added a reveal toggle to all seven password boxes — `components/PasswordInput.jsx` plus `styles/password-field.css` — and went straight to `main` with no spec, no branch, no agents and no browser pass, at the user's explicit instruction. It is the one place the workflow below was deliberately skipped, and it was skipped because the change is one self-contained frontend component with no backend, no data and no shared-class exposure. It is not a precedent for a feature.
+
+**One non-code item is open:** the Gmail app password in `.env` is rejected by Google, so forgot-password mail does not actually send. Configuration rather than a defect — worth saying before a demo, and note that `POST /api/auth/forgot-password` deliberately returns the same `200` either way, so a failed send is invisible from the UI by design.
+
+The rest of this section is the historical record of how the last specs were built, newest first, kept because it explains decisions the code does not.
+
+**`25-forgot-password` is the most recent, and it closes password management.** A backend slice with a real user-facing half, so it took the full pipeline *and* a browser pass, and it shipped its designed responsive UI in the same cycle. It added one collection and no dependency. See its row above.
+
+Four things about it are worth carrying forward.
+
+**The spec was wrong about ordering, and the review caught it.** The spec argued explicitly for `10`'s send-then-record rule, and reasoned well: a row written before a failed send records something that did not happen. But the cooldown was being *checked* by that read, and a check separated from its write by an SMTP round trip is a check every concurrent request walks past — so the only control against pointing this endpoint at a stranger's inbox did nothing under concurrency. The fix inverted the rule and moved the enforcement into a unique index. **A rule inherited from another feature deserves re-derivation in the new context**, not just citation; `10` was recording a send that had happened, while `25` was gating one that had not.
+
+**Two atomicity bugs, one shape.** Both the cooldown and the attempts cap were read-then-write, and both are now single updates. The tell is that the *third* such control in the same file — single-use, via `find_one_and_update` conditional on `consumed_at` — was already atomic and correct. One correct instance beside two incorrect ones is a strong signal to check the others; nobody did until review.
+
+**The premise behind a design decision was verified rather than assumed.** `reset_codes.py` expresses its rules as query filters because pymongo returns naive datetimes and comparing one to an aware `now` raises `TypeError`. That was carried over from `cooldown_skips`'s comment — and then actually re-run against a live server, where the stored `expires_at` did come back naive and the comparison did raise. The in-memory fake stores *aware* datetimes, so no test in the suite can catch a regression there; the guarantee is structural, and knowing that is why the live check was worth running.
+
+**The test fake was load-bearing again, for the second feature running.** It needed `upsert`, `$unset`, and a unique-index refusal before the security property was testable at all — and the subtle part is that the upsert must build its inserted document from the filter's *equality* fields only, so an operator-based cooldown filter contributes nothing and correctly falls through to the refusal. A fake that ignored `upsert` would have left every assertion green while the cooldown did nothing.
+
+**`24-invalidate-tokens-on-password-change` is the one before it.** A backend slice whose user-facing half is one paragraph of copy, so it took the full pipeline and a browser confirmation rather than a measurement pass. It added one optional integer field and no dependency. See the `Authentication` row above.
 
 Four things about it are worth carrying forward. **It exists because a recorded limitation was wrong, not merely loose.** `05` deferred token invalidation and `23` inherited the deferral, both quoting "up to 15 minutes"; that described the access token, while `refresh()` re-checked only `is_active` and the refresh cookie lives seven days. The lesson is that a deferral's *stated bound* deserves the same check as its code — the number had been copied forward through two specs without anyone re-reading the route it described.
 
@@ -406,19 +426,7 @@ Three things about it are worth carrying forward. **The identity rule got its ow
 
 **`20-init-db-index-reconcile` is the one before it, and it is not part of any of the groups below.** Also a backend slice, but with no UI at all, deliberately: `flask init-db` is run from a terminal by whoever administers the deployment, and the only screen it could plausibly have grown is a "drop an index on the production database" button. That is the same call `10-low-attendance-notifications` made.
 
-**`25-forgot-password` is the most recent, and it closes password management.** A backend slice with a real user-facing half, so it took the full pipeline *and* a browser pass, and it shipped its designed responsive UI in the same cycle. It added one collection and no dependency. See its row above.
-
-Four things about it are worth carrying forward.
-
-**The spec was wrong about ordering, and the review caught it.** The spec argued explicitly for `10`'s send-then-record rule, and reasoned well: a row written before a failed send records something that did not happen. But the cooldown was being *checked* by that read, and a check separated from its write by an SMTP round trip is a check every concurrent request walks past — so the only control against pointing this endpoint at a stranger's inbox did nothing under concurrency. The fix inverted the rule and moved the enforcement into a unique index. **A rule inherited from another feature deserves re-derivation in the new context**, not just citation; `10` was recording a send that had happened, while `25` was gating one that had not.
-
-**Two atomicity bugs, one shape.** Both the cooldown and the attempts cap were read-then-write, and both are now single updates. The tell is that the *third* such control in the same file — single-use, via `find_one_and_update` conditional on `consumed_at` — was already atomic and correct. One correct instance beside two incorrect ones is a strong signal to check the others; nobody did until review.
-
-**The premise behind a design decision was verified rather than assumed.** `reset_codes.py` expresses its rules as query filters because pymongo returns naive datetimes and comparing one to an aware `now` raises `TypeError`. That was carried over from `cooldown_skips`'s comment — and then actually re-run against a live server, where the stored `expires_at` did come back naive and the comparison did raise. The in-memory fake stores *aware* datetimes, so no test in the suite can catch a regression there; the guarantee is structural, and knowing that is why the live check was worth running.
-
-**The test fake was load-bearing again, for the second feature running.** It needed `upsert`, `$unset`, and a unique-index refusal before the security property was testable at all — and the subtle part is that the upsert must build its inserted document from the filter's *equality* fields only, so an operator-based cooldown filter contributes nothing and correctly falls through to the refusal. A fake that ignored `upsert` would have left every assertion green while the cooldown did nothing.
-
-After that: unscheduled. The remaining candidate named before `21` is unchanged — a faculty/admin view of a *named* student's attendance, ruled out as "small", because `09` built things so that **no endpoint anywhere takes a student id** and undoing that is a security decision rather than a finishing touch.
+After that: nothing. The one candidate ever named beyond it, and named before `21`, is a faculty/admin view of a *named* student's attendance, ruled out as "small", because `09` built things so that **no endpoint anywhere takes a student id** and undoing that is a security decision rather than a finishing touch.
 
 **The redesign is finished.** Every page was replaced through `/frontend-maker`, in small related groups, and `scaffolding.css` is deleted:
 
